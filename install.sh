@@ -25,4 +25,5 @@ cd ../..
 
 # install rlp and its dependencies
 pip install -e .
+pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.1
 pip install -r requirements.txt

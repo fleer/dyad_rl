@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - override /env: netslide_2x3
+  - override /training: dyad
+
+# Agent A uses MLP on discrete state, Agent B uses CNN on RGB pixels.
+# Both obs types are captured in every transition for cross-modality sharing.
+agent_a:
+  type: mlp
+  hidden_sizes: [128, 128]
+
+agent_b:
+  type: cnn
+  conv_channels: [32, 64, 64]
+  conv_kernels: [8, 4, 3]
+  conv_strides: [4, 2, 1]
+  fc_hidden: 512
+
+experiment_name: dyad

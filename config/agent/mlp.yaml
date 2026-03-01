@@ -1,0 +1,2 @@
+type: mlp
+hidden_sizes: [64, 64, 64]

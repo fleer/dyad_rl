@@ -1,0 +1,10 @@
+defaults:
+  - env: netslide_2x3
+  - agent: mlp
+  - training: dqn
+  - _self_
+
+mode: train  # train | eval
+experiment_name: default
+seed: 42
+device: auto  # auto | cpu | cuda | rocm

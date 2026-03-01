@@ -1,0 +1,16 @@
+batch_size: 32
+gamma: 0.99
+eps_start: 0.9
+eps_end: 0.05
+eps_decay: 100000
+tau: 0.005
+lr: 1.0e-4
+buffer_size: 50000
+total_episodes: 10000
+max_steps: 10000
+eval_interval: 1000
+eval_episodes: 100
+checkpoint_interval: 5000
+log_interval: 50
+prefill_buffer: true
+dyad: false

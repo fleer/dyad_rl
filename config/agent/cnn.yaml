@@ -1,0 +1,5 @@
+type: cnn
+conv_channels: [32, 64, 64]
+conv_kernels: [8, 4, 3]
+conv_strides: [4, 2, 1]
+fc_hidden: 512

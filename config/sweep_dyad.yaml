@@ -1,0 +1,62 @@
+# Optuna sweep config for dyad learning hyperparameter optimization.
+#
+# Usage:
+#   python experiment.py --multirun --config-name=sweep_dyad
+#   python experiment.py --multirun --config-name=sweep_dyad env=netslide_3x3
+#
+defaults:
+  - default
+  - override /env: netslide_2x3
+  - override /training: dyad
+  - override hydra/sweeper: optuna
+  - _self_
+
+experiment_name: sweep_dyad
+
+agent_a:
+  type: mlp
+  hidden_sizes: [128, 128]
+
+agent_b:
+  type: cnn
+  conv_channels: [32, 64, 64]
+  conv_kernels: [8, 4, 3]
+  conv_strides: [4, 2, 1]
+  fc_hidden: 512
+
+hydra:
+  sweeper:
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+    direction: maximize
+    n_trials: 50
+    n_jobs: 1
+    search_space:
+      training.lr:
+        type: float
+        low: 1e-5
+        high: 1e-3
+        log: true
+      training.gamma:
+        type: float
+        low: 0.95
+        high: 0.999
+      training.batch_size:
+        type: categorical
+        choices: [32, 64, 128, 256]
+      training.eps_decay:
+        type: categorical
+        choices: [5000, 10000, 20000, 50000]
+      training.tau:
+        type: float
+        low: 1e-4
+        high: 0.05
+        log: true
+      training.share_interval:
+        type: categorical
+        choices: [10, 25, 50, 100]
+      training.rating_threshold:
+        type: float
+        low: -1.0
+        high: 1.0
