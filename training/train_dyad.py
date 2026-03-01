@@ -73,13 +73,17 @@ def _share_experience(
         running_return = provider_trajectory[i]["reward"] + rater.gamma * running_return
         actual_returns[i] = running_return
 
+    # ATTENTION: This is the most critical part of the dyad learning algorithm. 
+    # The choice of rating_threshold determines which transitions are considered valuable.
     # Accept transitions where rater's Q-value suggests some value
-    # Rating = expected Q - actual return; accept if rating >= threshold
-    ratings = expected_returns - actual_returns
+    # Rating = actual return - expected return; accept if rating >= threshold
+    # This means that the accepted transitions are those where the provider's outcome was better 
+    # than what the rater expected, according to the rater's own value function.
+    ratings = actual_returns - expected_returns
     accepted: list[Transition] = []
 
     for i, step in enumerate(provider_trajectory):
-        if ratings[i] >= rating_threshold:
+        if ratings[i] > rating_threshold:
             # Build transition using rater-compatible observations
             rater_next_s = step.get(rater_next_obs_key)
             if rater_next_s is not None and rater.obs_type == "rgb":
