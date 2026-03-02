@@ -141,7 +141,7 @@ def train_single(
     eval_interval = cfg.training.eval_interval
     eval_episodes = cfg.training.eval_episodes
     checkpoint_interval = cfg.training.checkpoint_interval
-    buffer_size = cfg.training.buffer_size
+    buffer_size = cfg.agent.buffer_size
     log_interval = cfg.training.log_interval
     dual_obs = hasattr(env, "env") and hasattr(env.env, "_get_rgb_obs")
 

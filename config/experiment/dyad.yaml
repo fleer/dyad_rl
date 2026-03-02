@@ -7,7 +7,15 @@ defaults:
 # Both obs types are captured in every transition for cross-modality sharing.
 agent_a:
   type: mlp
-  hidden_sizes: [128, 128]
+  hidden_sizes: [64, 64]
+  batch_size: 32
+  gamma: 0.99
+  eps_start: 0.9
+  eps_end: 0.05
+  eps_decay: 100000
+  tau: 0.1
+  lr: 1.0e-4
+  buffer_size: 50000
 
 agent_b:
   type: cnn
@@ -15,5 +23,13 @@ agent_b:
   conv_kernels: [8, 4, 3]
   conv_strides: [4, 2, 1]
   fc_hidden: 512
+  batch_size: 32
+  gamma: 0.99
+  eps_start: 0.9
+  eps_end: 0.05
+  eps_decay: 100000
+  tau: 0.1
+  lr: 1.0e-4
+  buffer_size: 50000
 
 experiment_name: dyad

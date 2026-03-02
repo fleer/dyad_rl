@@ -1,2 +1,10 @@
 type: mlp
-hidden_sizes: [64, 64, 64]
+hidden_sizes: [64, 64]
+batch_size: 32
+gamma: 0.99
+eps_start: 0.9
+eps_end: 0.05
+eps_decay: 100000
+tau: 0.1
+lr: 1.0e-4
+buffer_size: 50000

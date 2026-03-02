@@ -68,8 +68,9 @@ def _make_cfg(obs_type="puzzle_state"):
             "max_state_repeats": 200,
             "include_cursor_in_state_info": True,
         },
-        "agent": {"type": "mlp", "hidden_sizes": [128, 128]},
-        "training": {
+        "agent": {
+            "type": "mlp",
+            "hidden_sizes": [128, 128],
             "batch_size": 32,
             "gamma": 0.99,
             "eps_start": 0.9,
@@ -78,6 +79,8 @@ def _make_cfg(obs_type="puzzle_state"):
             "tau": 0.005,
             "lr": 1e-4,
             "buffer_size": 10000,
+        },
+        "training": {
             "total_episodes": 10,
             "max_steps": 100,
             "eval_interval": 5,

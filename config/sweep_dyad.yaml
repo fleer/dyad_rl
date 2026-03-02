@@ -16,6 +16,14 @@ experiment_name: sweep_dyad
 agent_a:
   type: mlp
   hidden_sizes: [128, 128]
+  batch_size: 128
+  gamma: 0.99
+  eps_start: 0.9
+  eps_end: 0.05
+  eps_decay: 10000
+  tau: 0.005
+  lr: 1.0e-4
+  buffer_size: 50000
 
 agent_b:
   type: cnn
@@ -23,6 +31,14 @@ agent_b:
   conv_kernels: [8, 4, 3]
   conv_strides: [4, 2, 1]
   fc_hidden: 512
+  batch_size: 128
+  gamma: 0.99
+  eps_start: 0.9
+  eps_end: 0.05
+  eps_decay: 10000
+  tau: 0.005
+  lr: 1.0e-4
+  buffer_size: 50000
 
 hydra:
   sweeper:
@@ -33,22 +49,42 @@ hydra:
     n_trials: 50
     n_jobs: 1
     search_space:
-      training.lr:
+      agent_a.lr:
         type: float
         low: 1e-5
         high: 1e-3
         log: true
-      training.gamma:
+      agent_b.lr:
+        type: float
+        low: 1e-5
+        high: 1e-3
+        log: true
+      agent_a.gamma:
         type: float
         low: 0.95
         high: 0.999
-      training.batch_size:
+      agent_b.gamma:
+        type: float
+        low: 0.95
+        high: 0.999
+      agent_a.batch_size:
         type: categorical
         choices: [32, 64, 128, 256]
-      training.eps_decay:
+      agent_b.batch_size:
+        type: categorical
+        choices: [32, 64, 128, 256]
+      agent_a.eps_decay:
         type: categorical
         choices: [5000, 10000, 20000, 50000]
-      training.tau:
+      agent_b.eps_decay:
+        type: categorical
+        choices: [5000, 10000, 20000, 50000]
+      agent_a.tau:
+        type: float
+        low: 1e-4
+        high: 0.05
+        log: true
+      agent_b.tau:
         type: float
         low: 1e-4
         high: 0.05

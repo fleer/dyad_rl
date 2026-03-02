@@ -28,18 +28,18 @@ class DQNAgent:
         self.num_actions = num_actions
         self.device = device or torch.device("cpu")
 
-        # Hyperparameters from training config
-        self.batch_size = cfg.training.batch_size
-        self.gamma = cfg.training.gamma
-        self.eps_start = cfg.training.eps_start
-        self.eps_end = cfg.training.eps_end
-        self.eps_decay = cfg.training.eps_decay
-        self.tau = cfg.training.tau
-        self.lr = cfg.training.lr
-        self.buffer_size = cfg.training.buffer_size
-
         # Use agent_cfg if provided (for dyad with different configs), else cfg.agent
         a_cfg = agent_cfg if agent_cfg is not None else cfg.agent
+
+        # Hyperparameters from agent config
+        self.batch_size = a_cfg.batch_size
+        self.gamma = a_cfg.gamma
+        self.eps_start = a_cfg.eps_start
+        self.eps_end = a_cfg.eps_end
+        self.eps_decay = a_cfg.eps_decay
+        self.tau = a_cfg.tau
+        self.lr = a_cfg.lr
+        self.buffer_size = a_cfg.buffer_size
 
         # Build networks
         if a_cfg.type == "mlp":

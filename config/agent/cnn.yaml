@@ -3,3 +3,11 @@ conv_channels: [32, 64, 64]
 conv_kernels: [8, 4, 3]
 conv_strides: [4, 2, 1]
 fc_hidden: 512
+batch_size: 32
+gamma: 0.99
+eps_start: 0.9
+eps_end: 0.05
+eps_decay: 100000
+tau: 0.1
+lr: 1.0e-4
+buffer_size: 50000
