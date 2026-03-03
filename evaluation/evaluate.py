@@ -4,6 +4,25 @@ import numpy as np
 from agents.dqn_agent import DQNAgent
 
 
+def _process_obs(obs: dict | np.ndarray, agent_obs_type: str, dual_obs: bool) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+    """Extract agent obs and both modality obs from an environment observation.
+
+    Returns (agent_obs, state_discrete, state_rgb).
+    """
+    if dual_obs:
+        state_discrete = obs["puzzle_state"]
+        state_rgb = obs["pixels"]
+        if agent_obs_type == "rgb":
+            agent_obs = state_rgb.astype(np.float32) / 255.0
+        else:
+            agent_obs = state_discrete
+        return agent_obs, state_discrete, state_rgb
+    elif agent_obs_type == "rgb":
+        return obs["pixels"].astype(np.float32) / 255.0, None, None
+    else:
+        return obs, None, None
+
+
 def evaluate(
     agent: DQNAgent,
     env: gym.Env,
@@ -21,14 +40,14 @@ def evaluate(
     Returns:
         Dict with avg_return, win_rate, avg_length, avg_success_length, std_length.
     """
+    dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
     returns: list[float] = []
     lengths: list[int] = []
     successes: list[bool] = []
 
     for _ in range(n_episodes):
-        obs, info = env.reset()
-        if agent.obs_type == "rgb":
-            obs = obs["pixels"].astype(np.float32) / 255.0
+        obs_raw, info = env.reset()
+        obs, _, _ = _process_obs(obs_raw, agent.obs_type, dual_obs)
 
         total_return = 0.0
 
@@ -36,9 +55,8 @@ def evaluate(
             action_mask = env.action_masks()
             action = agent.select_action(obs, action_mask, explore=False)
 
-            obs, reward, terminated, truncated, info = env.step(action)
-            if agent.obs_type == "rgb":
-                obs = obs["pixels"].astype(np.float32) / 255.0
+            obs_raw, reward, terminated, truncated, info = env.step(action)
+            obs, _, _ = _process_obs(obs_raw, agent.obs_type, dual_obs)
 
             total_return += reward
 
@@ -72,42 +90,38 @@ def collect_eval_trajectory(
     """Run one evaluation episode and collect full trajectory with both obs types.
 
     Used by the dyad training loop for experience sharing.
-    Each element contains: state, action, reward, next_state, done,
-    plus obs_discrete and obs_rgb from info if available.
+    The env must use obs_type='dual' so both puzzle_state and pixels are available.
     """
     trajectory: list[dict] = []
-    obs, info = env.reset()
-    if agent.obs_type == "rgb":
-        obs_proc = obs["pixels"].astype(np.float32) / 255.0
-    else:
-        obs_proc = obs
+    obs_raw, info = env.reset()
+    obs, state_discrete, state_rgb = _process_obs(obs_raw, agent.obs_type, dual_obs=True)
 
     for _ in range(max_steps):
         action_mask = env.action_masks()
-        action = agent.select_action(obs_proc, action_mask, explore=False)
+        action = agent.select_action(obs, action_mask, explore=False)
 
-        next_obs, reward, terminated, truncated, next_info = env.step(action)
-        if agent.obs_type == "rgb":
-            next_obs_proc = next_obs["pixels"].astype(np.float32) / 255.0
-        else:
-            next_obs_proc = next_obs
+        next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
+        next_obs, next_state_discrete, next_state_rgb = _process_obs(
+            next_obs_raw, agent.obs_type, dual_obs=True
+        )
 
         done = terminated or truncated
 
         trajectory.append({
-            "state": obs_proc,
+            "state": obs,
             "action": action,
             "reward": reward,
-            "next_state": next_obs_proc,
+            "next_state": next_obs,
             "done": done,
-            "state_discrete": info.get("obs_discrete"),
-            "next_state_discrete": next_info.get("obs_discrete"),
-            "state_rgb": info.get("obs_rgb"),
-            "next_state_rgb": next_info.get("obs_rgb"),
+            "state_discrete": state_discrete,
+            "next_state_discrete": next_state_discrete,
+            "state_rgb": state_rgb,
+            "next_state_rgb": next_state_rgb,
         })
 
-        obs_proc = next_obs_proc
-        info = next_info
+        obs = next_obs
+        state_discrete = next_state_discrete
+        state_rgb = next_state_rgb
 
         if done:
             break

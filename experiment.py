@@ -49,12 +49,15 @@ def _resolve_device(device_str: str) -> torch.device:
     return torch.device(device_str)
 
 
-def _get_obs_shape(env: gym.Env, cfg: DictConfig) -> tuple[int, ...]:
-    """Determine the observation shape from the environment."""
-    if cfg.env.obs_type == "rgb":
+def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, ...]:
+    """Determine the observation shape for a given obs_type."""
+    if obs_type == "rgb":
         return (3, cfg.env.window_width, cfg.env.window_height)
     else:
-        # For FlattenObservation, get the flat shape
+        # For puzzle_state (or dual), get the flat discrete shape
+        obs_space = env.unwrapped.observation_space
+        if "puzzle_state" in obs_space.spaces:
+            return obs_space["puzzle_state"].shape
         return env.observation_space.shape
 
 
@@ -65,7 +68,7 @@ def run_train_single(cfg: DictConfig) -> float:
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
     env = make_env(cfg)
-    obs_shape = _get_obs_shape(env, cfg)
+    obs_shape = _get_obs_shape(env, cfg.env.obs_type, cfg)
     num_actions = env.action_space.n
     log.info(f"Obs shape: {obs_shape}, Actions: {num_actions}")
 
@@ -92,18 +95,12 @@ def run_train_dyad(cfg: DictConfig) -> float:
     log.info(f"Device: {device}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
-    # Agent A: uses puzzle_state obs
-    cfg_a_env = OmegaConf.create({**cfg.env, "obs_type": "puzzle_state"})
-    cfg_a = OmegaConf.create({**cfg, "env": cfg_a_env})
-    env_a = make_dual_obs_env(cfg_a)
+    # Both agents share a dual-obs environment that provides both modalities
+    env_a = make_dual_obs_env(cfg)
+    env_b = make_dual_obs_env(cfg)
 
-    # Agent B: uses rgb obs
-    cfg_b_env = OmegaConf.create({**cfg.env, "obs_type": "rgb"})
-    cfg_b = OmegaConf.create({**cfg, "env": cfg_b_env})
-    env_b = make_dual_obs_env(cfg_b)
-
-    obs_shape_a = _get_obs_shape(env_a, cfg_a)
-    obs_shape_b = _get_obs_shape(env_b, cfg_b)
+    obs_shape_a = _get_obs_shape(env_a, "puzzle_state", cfg)
+    obs_shape_b = _get_obs_shape(env_b, "rgb", cfg)
     num_actions = env_a.action_space.n
 
     agent_a_cfg = cfg.get("agent_a", cfg.agent)
@@ -142,7 +139,7 @@ def run_eval(cfg: DictConfig) -> None:
     """Evaluate a trained agent from checkpoint."""
     device = _resolve_device(cfg.device)
     env = make_env(cfg)
-    obs_shape = _get_obs_shape(env, cfg)
+    obs_shape = _get_obs_shape(env, cfg.env.obs_type, cfg)
     num_actions = env.action_space.n
 
     agent = DQNAgent(

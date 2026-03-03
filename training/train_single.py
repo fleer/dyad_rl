@@ -12,6 +12,25 @@ from evaluation.evaluate import evaluate
 log = logging.getLogger(__name__)
 
 
+def _process_obs(obs: dict | np.ndarray, agent_obs_type: str, dual_obs: bool) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
+    """Extract agent obs and both modality obs from an environment observation.
+
+    Returns (agent_obs, state_discrete, state_rgb).
+    """
+    if dual_obs:
+        state_discrete = obs["puzzle_state"]
+        state_rgb = obs["pixels"]
+        if agent_obs_type == "rgb":
+            agent_obs = state_rgb.astype(np.float32) / 255.0
+        else:
+            agent_obs = state_discrete
+        return agent_obs, state_discrete, state_rgb
+    elif agent_obs_type == "rgb":
+        return obs["pixels"].astype(np.float32) / 255.0, None, None
+    else:
+        return obs, None, None
+
+
 def prefill_buffer(
     agent: DQNAgent,
     env: gym.Env,
@@ -23,37 +42,30 @@ def prefill_buffer(
     log.info(f"Prefilling replay buffer with {num_transitions} random transitions...")
     collected = 0
     while collected < num_transitions:
-        obs, info = env.reset()
-        if agent.obs_type == "rgb":
-            obs = obs["pixels"].astype(np.float32) / 255.0
+        obs_raw, info = env.reset()
+        obs, state_discrete, state_rgb = _process_obs(obs_raw, agent.obs_type, dual_obs)
 
         for _ in range(max_steps):
             action_mask = env.action_masks()
-            # Random action respecting the mask
             valid_actions = np.where(action_mask)[0]
             action = int(np.random.choice(valid_actions))
 
-            next_obs, reward, terminated, truncated, next_info = env.step(action)
-            if agent.obs_type == "rgb":
-                next_obs_proc = next_obs["pixels"].astype(np.float32) / 255.0
-            else:
-                next_obs_proc = next_obs
+            next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
+            next_obs, next_state_discrete, next_state_rgb = _process_obs(
+                next_obs_raw, agent.obs_type, dual_obs
+            )
 
             done = terminated or truncated
 
-            state_discrete = info.get("obs_discrete") if dual_obs else None
-            next_state_discrete = next_info.get("obs_discrete") if dual_obs else None
-            state_rgb = info.get("obs_rgb") if dual_obs else None
-            next_state_rgb = next_info.get("obs_rgb") if dual_obs else None
-
             agent.replay_buffer.push(
-                obs, action, reward, next_obs_proc, done,
+                obs, action, reward, next_obs, done,
                 state_discrete, next_state_discrete,
                 state_rgb, next_state_rgb,
             )
             collected += 1
-            obs = next_obs_proc
-            info = next_info
+            obs = next_obs
+            state_discrete = next_state_discrete
+            state_rgb = next_state_rgb
 
             if done or collected >= num_transitions:
                 break
@@ -67,9 +79,8 @@ def _run_episode(
     dual_obs: bool = False,
 ) -> tuple[float, int, bool, float]:
     """Run one training episode. Returns (total_return, length, success, avg_loss)."""
-    obs, info = env.reset()
-    if agent.obs_type == "rgb":
-        obs = obs["pixels"].astype(np.float32) / 255.0
+    obs_raw, info = env.reset()
+    obs, state_discrete, state_rgb = _process_obs(obs_raw, agent.obs_type, dual_obs)
 
     total_return = 0.0
     total_loss = 0.0
@@ -79,22 +90,15 @@ def _run_episode(
         action_mask = env.action_masks()
         action = agent.select_action(obs, action_mask, explore=True)
 
-        next_obs, reward, terminated, truncated, next_info = env.step(action)
-        if agent.obs_type == "rgb":
-            next_obs_proc = next_obs["pixels"].astype(np.float32) / 255.0
-        else:
-            next_obs_proc = next_obs
+        next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
+        next_obs, next_state_discrete, next_state_rgb = _process_obs(
+            next_obs_raw, agent.obs_type, dual_obs
+        )
 
         done = terminated or truncated
 
-        # For dyad: capture both observation types from info
-        state_discrete = info.get("obs_discrete") if dual_obs else None
-        next_state_discrete = next_info.get("obs_discrete") if dual_obs else None
-        state_rgb = info.get("obs_rgb") if dual_obs else None
-        next_state_rgb = next_info.get("obs_rgb") if dual_obs else None
-
         agent.replay_buffer.push(
-            obs, action, reward, next_obs_proc, done,
+            obs, action, reward, next_obs, done,
             state_discrete, next_state_discrete,
             state_rgb, next_state_rgb,
         )
@@ -106,8 +110,9 @@ def _run_episode(
         agent.update_target_net()
 
         total_return += reward
-        obs = next_obs_proc
-        info = next_info
+        obs = next_obs
+        state_discrete = next_state_discrete
+        state_rgb = next_state_rgb
 
         if done:
             break
@@ -143,7 +148,7 @@ def train_single(
     checkpoint_interval = cfg.training.checkpoint_interval
     buffer_size = cfg.agent.buffer_size
     log_interval = cfg.training.log_interval
-    dual_obs = hasattr(env, "env") and hasattr(env.env, "_get_rgb_obs")
+    dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
 
     os.makedirs(checkpoint_dir, exist_ok=True)
     best_win_rate = -1.0

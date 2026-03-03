@@ -90,7 +90,8 @@ class DQNAgent:
             -self.steps_done / self.eps_decay
         )
         self.current_epsilon = eps
-        self.steps_done += 1
+        if explore:
+            self.steps_done += 1
 
         if explore and np.random.random() < eps:
             # Random action from valid actions

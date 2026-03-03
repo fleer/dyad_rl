@@ -12,33 +12,40 @@ from rlp.envs import observation_spaces as obs_spaces
 
 FPS = 60
 
+
 class PuzzleEnv(gym.Env, EzPickle):
     """
     Puzzle Reinforcement Learning Environment.
     A Gym wrapper around the logic puzzles in
     Simon Tatham's Portable Puzzle Collection.
     """
-    metadata = {"render_modes": ["human", "rgb_array"], 
-                "render_fps": FPS,
-                "observation_types": ["rgb", "puzzle_state"]}
 
-    def __init__(self,
-                 puzzle: str,
-                 render_mode: str = "human",
-                 obs_type: str = "rgb",
-                 window_width: int = 128,
-                 window_height: int = 128,
-                 allow_undo: bool = False,
-                 max_state_repeats: int = 200,
-                 include_cursor_in_state_info: bool = True,
-                 params: str | None = None,
-                 n_envs: int = 1
+    metadata = {
+        "render_modes": ["human", "rgb_array"],
+        "render_fps": FPS,
+        "observation_types": ["rgb", "puzzle_state", "dual"],
+    }
+
+    def __init__(
+        self,
+        puzzle: str,
+        render_mode: str = "human",
+        obs_type: str = "rgb",
+        window_width: int = 128,
+        window_height: int = 128,
+        allow_undo: bool = False,
+        max_state_repeats: int = 200,
+        include_cursor_in_state_info: bool = True,
+        params: str | None = None,
+        n_envs: int = 1,
     ):
-        if obs_type.lower() == 'rgb':
-            obs_type = 'rgb'
+        if obs_type.lower() == "rgb":
+            obs_type = "rgb"
+        elif obs_type.lower() == "dual":
+            obs_type = "dual"
         elif obs_type not in self.metadata["observation_types"]:
             raise ValueError(
-                f"Invalid observation type: {obs_type}. Expecting: rgb, puzzle_state."
+                f"Invalid observation type: {obs_type}. Expecting: rgb, puzzle_state, dual."
             )
         self.obs_type = obs_type
 
@@ -59,7 +66,9 @@ class PuzzleEnv(gym.Env, EzPickle):
         I.e. 0 corresponds to "arrow_up", 1 to "arrow_down" etc.
         """
         self.allow_undo = allow_undo
-        self.action_keys = rp.api.specific.get_action_keys(self.puzzle_name, self.allow_undo)
+        self.action_keys = rp.api.specific.get_action_keys(
+            self.puzzle_name, self.allow_undo
+        )
         self._action_to_key = {i: key for i, key in enumerate(self.action_keys)}
 
         # Tracking the CTRL / SHIFT modifiers
@@ -93,50 +102,121 @@ class PuzzleEnv(gym.Env, EzPickle):
         self.clock: pygame.time.Clock | None = None
         self.ticks = 0
 
-        self.puzzle = rp.Puzzle(self.puzzle_name, self.window_width,
-                                self.window_height, self.params, 
-                                False if self.render_mode == "human" else True)
+        self.puzzle = rp.Puzzle(
+            self.puzzle_name,
+            self.window_width,
+            self.window_height,
+            self.params,
+            False if self.render_mode == "human" else True,
+        )
 
-        if self.obs_type == 'rgb':
+        if self.obs_type == "rgb":
             self.observation_space = spaces.Dict(
                 {
-                    "pixels": spaces.Box(0, 255, (3, self.window_width, self.window_height), dtype=np.uint8),
+                    "pixels": spaces.Box(
+                        0,
+                        255,
+                        (3, self.window_width, self.window_height),
+                        dtype=np.uint8,
+                    ),
                 }
             )
-        elif self.obs_type == 'puzzle_state':
-            self.observation_space = spaces.Dict(
+        elif self.obs_type == "puzzle_state":
+            self._ps_obs_space = spaces.Dict(
                 obs_spaces.get_observation_space(
                     self.puzzle_name,
                     self.puzzle.fe.contents.me.contents.states[0].state.contents,
-                    None if self.puzzle_name in rp.api.specific.ui_reset_never else self.puzzle.fe.contents.me.contents.ui
+                    (
+                        None
+                        if self.puzzle_name in rp.api.specific.ui_reset_never
+                        else self.puzzle.fe.contents.me.contents.ui
+                    ),
                 )
+            )
+            self.observation_space = self._ps_obs_space
+        elif self.obs_type == "dual":
+            self._ps_obs_space = spaces.Dict(
+                obs_spaces.get_observation_space(
+                    self.puzzle_name,
+                    self.puzzle.fe.contents.me.contents.states[0].state.contents,
+                    (
+                        None
+                        if self.puzzle_name in rp.api.specific.ui_reset_never
+                        else self.puzzle.fe.contents.me.contents.ui
+                    ),
+                )
+            )
+            flat_size = spaces.utils.flatdim(self._ps_obs_space)
+            self.observation_space = spaces.Dict(
+                {
+                    "puzzle_state": spaces.Box(
+                        -np.inf, np.inf, (flat_size,), dtype=np.float32
+                    ),
+                    "pixels": spaces.Box(
+                        0,
+                        255,
+                        (3, self.window_width, self.window_height),
+                        dtype=np.uint8,
+                    ),
+                }
             )
 
     def _get_obs(self) -> dict:
-        if self.obs_type == 'rgb':
+        if self.obs_type == "rgb":
             return {
                 "pixels": np.transpose(
-                    np.array(pygame.surfarray.pixels3d(self.puzzle.surf)), axes=(2, 1, 0)
+                    np.array(pygame.surfarray.pixels3d(self.puzzle.surf)),
+                    axes=(2, 1, 0),
                 )
+            }
+        elif self.obs_type == "dual":
+            if not self._state_dict_up_to_date:
+                self._update_state_dict()
+            ps_dict = obs_spaces.get_observation(
+                self.puzzle_name,
+                self.state_dict,
+                (
+                    None
+                    if self.include_cursor_in_state_info
+                    else rp.api.specific.get_cursor_coords(
+                        self.puzzle_name, self.puzzle.fe.contents.me.contents
+                    )
+                ),
+            )
+            return {
+                "puzzle_state": spaces.utils.flatten(
+                    self._ps_obs_space, ps_dict
+                ).astype(np.float32),
+                "pixels": np.transpose(
+                    np.array(pygame.surfarray.pixels3d(self.puzzle.surf)),
+                    axes=(2, 1, 0),
+                ),
             }
         else:
             if not self._state_dict_up_to_date:
                 self._update_state_dict()
             return obs_spaces.get_observation(
-                self.puzzle_name, self.state_dict,
-                None if self.include_cursor_in_state_info else rp.api.specific.get_cursor_coords(
-                    self.puzzle_name,
-                    self.puzzle.fe.contents.me.contents)
+                self.puzzle_name,
+                self.state_dict,
+                (
+                    None
+                    if self.include_cursor_in_state_info
+                    else rp.api.specific.get_cursor_coords(
+                        self.puzzle_name, self.puzzle.fe.contents.me.contents
+                    )
+                ),
             )
 
     def _update_state_dict(self) -> None:
-        self.state_dict = self.puzzle.get_puzzle_state(self.include_cursor_in_state_info)
+        self.state_dict = self.puzzle.get_puzzle_state(
+            self.include_cursor_in_state_info
+        )
         self._state_dict_up_to_date = True
 
     def _get_info(self) -> dict[str, Any]:
         if not self._state_dict_up_to_date:
             self._update_state_dict()
-        self.current_state_hash = rp.api.make_hash(self.state_dict) # type: ignore[assignment]
+        self.current_state_hash = rp.api.make_hash(self.state_dict)  # type: ignore[assignment]
         if self.current_state_hash in self.state_histogram:
             current_occurances = self.state_histogram[self.current_state_hash]
         else:
@@ -152,8 +232,7 @@ class PuzzleEnv(gym.Env, EzPickle):
 
     def action_masks(self) -> np.ndarray:
         action_mask, self.next_move_strings = self.puzzle.valid_action_mask(
-            self.action_keys,
-            self.modifiers_value
+            self.action_keys, self.modifiers_value
         )
         return action_mask
 
@@ -188,7 +267,7 @@ class PuzzleEnv(gym.Env, EzPickle):
         key = self._action_to_key[action]
 
         # this is only available for puzzles that support
-        # a solver (which provides a sequence of moves that 
+        # a solver (which provides a sequence of moves that
         # solve the puzzle)
         self.current_move_was_toward_solution = False
         if key in rp.api.specific.CURSOR_MOVE_KEYS and self.puzzle.can_solve:
@@ -202,8 +281,9 @@ class PuzzleEnv(gym.Env, EzPickle):
         if key == pygame.K_LCTRL or key == pygame.K_LSHIFT:
             modifier = 0 if key == pygame.K_LCTRL else 1
             self.modifiers_down[modifier] ^= 1
-            self.modifiers_value = (pygame.KMOD_CTRL if self.modifiers_down[0] else 0) + (
-                pygame.KMOD_SHIFT if self.modifiers_down[1] else 0)
+            self.modifiers_value = (
+                pygame.KMOD_CTRL if self.modifiers_down[0] else 0
+            ) + (pygame.KMOD_SHIFT if self.modifiers_down[1] else 0)
         else:
             # when action masking is applied, we already have the next move's string
             # if not, we need to get it for further processing
@@ -211,17 +291,19 @@ class PuzzleEnv(gym.Env, EzPickle):
                 current_move_string = self.next_move_strings[action]
             else:
                 _, move_string_list = self.puzzle.valid_action_mask(
-                    [key],
-                    self.modifiers_value,
-                    action
+                    [key], self.modifiers_value, action
                 )
                 current_move_string = move_string_list[0] if move_string_list else None
-            try: 
-                self.current_move_string = current_move_string.decode('utf-8')
+            try:
+                self.current_move_string = current_move_string.decode("utf-8")
                 if len(self.current_move_string) > 1:
-                    self.current_move_was_toward_solution = self.puzzle.check_move_against_solution(self.current_move_string)
+                    self.current_move_was_toward_solution = (
+                        self.puzzle.check_move_against_solution(
+                            self.current_move_string
+                        )
+                    )
             except:
-                self.current_move_string = ''
+                self.current_move_string = ""
 
             self.puzzle.process_key(pygame.KEYDOWN, key, self.modifiers_value)
         self._state_dict_up_to_date = False
@@ -270,8 +352,12 @@ class PuzzleEnv(gym.Env, EzPickle):
     def get_state(self) -> Mapping[str, Any]:
         env_dict = self.__dict__.copy()
         state_dict: dict[str, Any] = {}
-        state_dict["env_dict"] = {k: v for k, v in env_dict.items() if k not in ["puzzle"]}
-        state_dict["puzzle"] = self.puzzle.serialise_state("/tmp/rlp", threading.get_native_id())
+        state_dict["env_dict"] = {
+            k: v for k, v in env_dict.items() if k not in ["puzzle"]
+        }
+        state_dict["puzzle"] = self.puzzle.serialise_state(
+            "/tmp/rlp", threading.get_native_id()
+        )
         return state_dict
 
     def set_state(self, state_dict: Mapping[str, Any]):
@@ -280,6 +366,8 @@ class PuzzleEnv(gym.Env, EzPickle):
 
         observation = self._get_obs()
         return_observation = {}
-        return_observation["obs"] = spaces.utils.flatten(self.observation_space, observation)
+        return_observation["obs"] = spaces.utils.flatten(
+            self.observation_space, observation
+        )
         return_observation["action_mask"] = self.action_masks()
         return return_observation

@@ -149,24 +149,27 @@ def test_env_and_agent():
 
 
 def test_dual_obs_standalone():
-    """Test DualObsWrapper in its own env lifecycle."""
+    """Test dual obs_type environment in its own env lifecycle."""
     print("=== Testing Dual Obs Environment ===")
     cfg = _make_cfg()
     env = make_dual_obs_env(cfg)
     obs, info = env.reset(seed=42)
-    assert "obs_discrete" in info, "obs_discrete missing from info"
-    assert "obs_rgb" in info, "obs_rgb missing from info"
-    print(f"  obs_discrete shape: {info['obs_discrete'].shape}")
-    print(f"  obs_rgb shape: {info['obs_rgb'].shape}")
+    assert isinstance(obs, dict), "dual obs should be a dict"
+    assert "puzzle_state" in obs, "puzzle_state missing from obs"
+    assert "pixels" in obs, "pixels missing from obs"
+    print(f"  puzzle_state shape: {obs['puzzle_state'].shape}")
+    print(f"  pixels shape: {obs['pixels'].shape}")
+    assert obs["puzzle_state"].dtype == np.float32, f"puzzle_state dtype wrong: {obs['puzzle_state'].dtype}"
+    assert obs["pixels"].dtype == np.uint8, f"pixels dtype wrong: {obs['pixels'].dtype}"
 
     mask = env.action_masks()
     valid = np.where(mask)[0]
     action = int(np.random.choice(valid))
     obs, reward, term, trunc, info = env.step(action)
-    assert "obs_discrete" in info
-    assert "obs_rgb" in info
+    assert "puzzle_state" in obs
+    assert "pixels" in obs
     print("  Step with dual obs OK")
-    print("  Dual obs wrapper OK")
+    print("  Dual obs environment OK")
 
 
 if __name__ == "__main__":

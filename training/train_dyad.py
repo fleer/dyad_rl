@@ -124,8 +124,8 @@ def train_dyad(
     Args:
         agent_a: First DQN agent (e.g., MLP on discrete state).
         agent_b: Second DQN agent (e.g., CNN on RGB pixels).
-        env_a: Environment for agent A (with DualObsWrapper).
-        env_b: Environment for agent B (with DualObsWrapper).
+        env_a: Environment for agent A (obs_type='dual').
+        env_b: Environment for agent B (obs_type='dual').
         cfg: Hydra config with training and dyad parameters.
         logger_a: MetricsLogger for agent A.
         logger_b: MetricsLogger for agent B.
