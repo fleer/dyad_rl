@@ -29,7 +29,7 @@
                 "terminal.integrated.shell.linux": "/bin/bash",
                 "terminal.integrated.env.linux": {
                     "XDG_RUNTIME_DIR": "/run/user/$(id -u)"
-                },
+                }
             },
             "extensions": [
                 "streetsidesoftware.code-spell-checker",
@@ -49,6 +49,6 @@
     //     }
     // },
     // Use 'postCreateCommand' to run commands after the container is created.
-    "postCreateCommand": "./install.sh",
+    "postCreateCommand": "curl -LsSf https://astral.sh/uv/install.sh | sh && ./install.sh",
     "remoteUser": "vscode"
 }
