@@ -8,22 +8,23 @@ if [ -d ".venv" ]; then
     echo "Virtual environment already exists. Skipping creation."
 else
     echo "Creating virtual environment..."
-    python3.11 -m venv .venv
+    uv venv --python=3.11
 fi
 source .venv/bin/activate
 
 # build the C libraries
 mkdir -p rlp/lib
-cd rlp/lib
+cd puzzle_env/rlp/lib
 cmake ../../puzzles
 TMP_MAKEFLAGS=$MAKEFLAGS
 export MAKEFLAGS='-j 1'
 make icons
 export MAKEFLAGS=$TMP_MAKEFLAGS
 make
-cd ../..
+cd ../../..
 
 # install rlp and its dependencies
-pip install -e .
-pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.1
-pip install -r requirements.txt
+uv pip install -e ./puzzle_env
+# uv pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.1
+uv pip install torch torchvision torchaudio
+uv pip install -r requirements.txt

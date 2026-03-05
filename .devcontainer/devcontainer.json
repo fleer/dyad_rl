@@ -1,0 +1,54 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+    "name": "Python 3",
+    "build": {
+        "dockerfile": "./Dockerfile",
+        "context": "."
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils:2": {
+            "installZsh": "true",
+            "username": "vscode",
+            "userUid": "1000",
+            "userGid": "1000",
+            "upgradePackages": "true"
+        },
+        "ghcr.io/devcontainers/features/python:1": "none",
+        "ghcr.io/devcontainers/features/node:1": "none",
+        "ghcr.io/devcontainers/features/git:1": {
+            "version": "latest",
+            "ppa": "false"
+        }
+    },
+    "customizations": {
+        // Configure properties specific to VS Code.
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "terminal.integrated.shell.linux": "/bin/bash",
+                "terminal.integrated.env.linux": {
+                    "XDG_RUNTIME_DIR": "/run/user/$(id -u)"
+                },
+            },
+            "extensions": [
+                "streetsidesoftware.code-spell-checker",
+                "ms-toolsai.jupyter",
+                "charliermarsh.ruff"
+            ]
+        }
+    },
+    // Use 'forwardPorts' to make a list of ports inside the container available locally.
+    // "forwardPorts": [9000],
+    // Use 'portsAttributes' to set default properties for specific forwarded ports. 
+    // More info: https://containers.dev/implementors/json_reference/#port-attributes
+    // "portsAttributes": {
+    //     "9000": {
+    //         "label": "Hello Remote World",
+    //         "onAutoForward": "notify"
+    //     }
+    // },
+    // Use 'postCreateCommand' to run commands after the container is created.
+    "postCreateCommand": "./install.sh",
+    "remoteUser": "vscode"
+}
