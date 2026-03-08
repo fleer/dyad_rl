@@ -1,10 +1,15 @@
 type: mlp
-hidden_sizes: [64, 64]
+hidden_sizes: [64, 64, 64]
 batch_size: 32
 gamma: 0.99
-eps_start: 0.9
+eps_start: 1.
 eps_end: 0.05
-eps_decay: 100000
-tau: 0.1
+# TODO: Consider increasing eps_decay for better exploration
+eps_decay: 250000
+tau: 0.05
 lr: 1.0e-4
-buffer_size: 50000
+buffer_size: 250000
+replay_buffer_type: standard  # standard | her
+her_n_sampled_goal: 4
+her_goal_selection_strategy: future  # future | final | episode
+her_goal_tolerance: 1.0e-6

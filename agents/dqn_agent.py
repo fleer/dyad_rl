@@ -8,7 +8,7 @@ import torch.optim as optim
 from omegaconf import DictConfig
 
 from agents.networks import MLPNetwork, CNNNetwork
-from utils.replay_buffer import ReplayBuffer, Transition
+from utils.replay_buffer import ReplayBuffer, HERReplayBuffer, Transition
 
 
 class DQNAgent:
@@ -74,9 +74,26 @@ class DQNAgent:
         self.target_net.eval()
 
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.lr)
-        self.loss_fn = nn.SmoothL1Loss()
+        self.loss_fn = nn.HuberLoss()
 
-        self.replay_buffer = ReplayBuffer(self.buffer_size)
+        replay_type = str(getattr(a_cfg, "replay_buffer_type", "standard")).lower()
+        if replay_type == "her":
+            n_sampled_goal = int(getattr(a_cfg, "her_n_sampled_goal", 4))
+            goal_strategy = str(getattr(a_cfg, "her_goal_selection_strategy", "future"))
+            goal_tolerance = float(getattr(a_cfg, "her_goal_tolerance", 1e-6))
+
+            def _reward_fn(achieved_goal: np.ndarray, goal: np.ndarray) -> float:
+                # Sparse binary reward used by HER relabeling.
+                return 0.0 if np.allclose(achieved_goal, goal, atol=goal_tolerance) else -1.0
+
+            self.replay_buffer = HERReplayBuffer(
+                capacity=self.buffer_size,
+                reward_fn=_reward_fn,
+                n_sampled_goal=n_sampled_goal,
+                goal_selection_strategy=goal_strategy,
+            )
+        else:
+            self.replay_buffer = ReplayBuffer(self.buffer_size)
         self.steps_done = 0
 
     def select_action(
@@ -150,6 +167,7 @@ class DQNAgent:
         for tp, pp in zip(
             self.target_net.parameters(), self.policy_net.parameters()
         ):
+            # TODO: CHECK
             tp.data.copy_(self.tau * pp.data + (1.0 - self.tau) * tp.data)
 
     # --- Dyad support methods ---

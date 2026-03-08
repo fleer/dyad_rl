@@ -7,15 +7,19 @@ defaults:
 # Both obs types are captured in every transition for cross-modality sharing.
 agent_a:
   type: mlp
-  hidden_sizes: [64, 64]
+  hidden_sizes: [64, 64, 64]
   batch_size: 32
   gamma: 0.99
-  eps_start: 0.9
+  eps_start: 1
   eps_end: 0.05
-  eps_decay: 100000
-  tau: 0.1
+  eps_decay: 250000
+  tau: 0.005
   lr: 1.0e-4
-  buffer_size: 50000
+  buffer_size: 250000
+  replay_buffer_type: her  # standard | her
+  her_n_sampled_goal: 4
+  her_goal_selection_strategy: future  # future | final | episode
+  her_goal_tolerance: 1.0e-6
 
 agent_b:
   type: cnn
@@ -27,9 +31,13 @@ agent_b:
   gamma: 0.99
   eps_start: 0.9
   eps_end: 0.05
-  eps_decay: 100000
-  tau: 0.1
+  eps_decay: 250000
+  tau: 0.005
   lr: 1.0e-4
-  buffer_size: 50000
+  buffer_size: 250000
+  replay_buffer_type: her  # standard | her
+  her_n_sampled_goal: 4
+  her_goal_selection_strategy: future  # future | final | episode
+  her_goal_tolerance: 1.0e-6
 
 experiment_name: dyad

@@ -176,7 +176,8 @@ def train_single(
             log.info(
                 f"Episode {episode}/{total_episodes} | "
                 f"Avg Return: {stats.get('avg_return', 0):.1f} | "
-                f"Win Rate: {stats.get('win_rate', 0):.3f} | "
+                # f"Win Rate: {stats.get('win_rate', 0):.3f} | "
+                f"Avg Loss: {stats.get('avg_loss', 0):.3f} | "
                 f"Avg Length: {stats.get('avg_length', 0):.0f} | "
                 f"Epsilon: {agent.current_epsilon:.3f} | "
                 f"Buffer: {len(agent.replay_buffer)}"

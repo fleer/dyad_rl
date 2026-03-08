@@ -13,7 +13,7 @@ fi
 source .venv/bin/activate
 
 # build the C libraries
-mkdir -p rlp/lib
+mkdir -p puzzle_env/rlp/lib
 cd puzzle_env/rlp/lib
 cmake ../../puzzles
 TMP_MAKEFLAGS=$MAKEFLAGS
