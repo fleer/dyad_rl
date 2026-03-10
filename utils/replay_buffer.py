@@ -5,23 +5,49 @@ from typing import Callable
 import numpy as np
 import torch
 
-Transition = namedtuple("Transition", [
-    "state", "action", "reward", "next_state", "done",
-    "state_discrete", "next_state_discrete",
-    "state_rgb", "next_state_rgb",
-])
+Transition = namedtuple(
+    "Transition",
+    [
+        "state",
+        "action",
+        "reward",
+        "next_state",
+        "done",
+        "state_discrete",
+        "next_state_discrete",
+        "state_rgb",
+        "next_state_rgb",
+    ],
+)
 
-HERTransition = namedtuple("HERTransition", [
-    "state", "action", "reward", "next_state", "done",
-    "goal", "next_goal",
-    "state_discrete", "next_state_discrete",
-    "state_rgb", "next_state_rgb",
-])
+HERTransition = namedtuple(
+    "HERTransition",
+    [
+        "state",
+        "action",
+        "reward",
+        "next_state",
+        "done",
+        "goal",
+        "next_goal",
+        "state_discrete",
+        "next_state_discrete",
+        "state_rgb",
+        "next_state_rgb",
+    ],
+)
 
-Episode = namedtuple("Episode", [
-    "states", "actions", "goals", "achieved_goals",
-    "states_discrete", "states_rgb",
-])
+Episode = namedtuple(
+    "Episode",
+    [
+        "states",
+        "actions",
+        "goals",
+        "achieved_goals",
+        "states_discrete",
+        "states_rgb",
+    ],
+)
 
 
 class ReplayBuffer:
@@ -45,9 +71,15 @@ class ReplayBuffer:
         next_state_rgb: np.ndarray | None = None,
     ) -> None:
         transition = Transition(
-            state, action, reward, next_state, done,
-            state_discrete, next_state_discrete,
-            state_rgb, next_state_rgb,
+            state,
+            action,
+            reward,
+            next_state,
+            done,
+            state_discrete,
+            next_state_discrete,
+            state_rgb,
+            next_state_rgb,
         )
         if len(self.buffer) < self.capacity:
             self.buffer.append(transition)
@@ -79,7 +111,7 @@ class ReplayBuffer:
             np.array([t.next_state for t in batch]), dtype=torch.float32, device=device
         )
         dones = torch.as_tensor(
-            np.array([t.done for t in batch]), dtype=torch.float32, device=device
+            np.array([t.done for t in batch]), dtype=torch.bool, device=device
         ).unsqueeze(1)
 
         return {
@@ -99,10 +131,10 @@ class ReplayBuffer:
 
 class HERReplayBuffer:
     """Hindsight Experience Replay (HER) buffer for goal-conditioned RL.
-    
+
     Paper: https://arxiv.org/abs/1707.01495
     Reference: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/her/her_replay_buffer.py
-    
+
     Stores episodes and relabels transitions with alternative goals sampled from
     achieved states in the episode. This allows learning from sparse, binary rewards
     by treating failed attempts at reaching one goal as successful attempts at
@@ -117,7 +149,7 @@ class HERReplayBuffer:
         goal_selection_strategy: str = "future",
     ):
         """Initialize HER replay buffer.
-        
+
         Args:
             capacity: Maximum number of episodes to store
             reward_fn: Function that computes reward given (achieved_goal, goal).
@@ -135,13 +167,13 @@ class HERReplayBuffer:
         # Her ratio represents the fraction of virtual transitions
         self.her_ratio = 1.0 - (1.0 / (self.n_sampled_goal + 1))
         self.goal_selection_strategy = goal_selection_strategy.lower()
-        
+
         if self.goal_selection_strategy not in ["future", "final", "episode"]:
             raise ValueError(
                 f"goal_selection_strategy must be 'future', 'final', or 'episode', "
                 f"got {self.goal_selection_strategy}"
             )
-        
+
         # Transition-level storage to remain drop-in compatible with ReplayBuffer.
         self.buffer: list[Transition] = []
         self.position = 0
@@ -260,7 +292,7 @@ class HERReplayBuffer:
         states_rgb: list[np.ndarray] | None = None,
     ) -> None:
         """Store an entire episode.
-        
+
         Args:
             states: List of observations at each step
             actions: List of actions at each step
@@ -284,7 +316,9 @@ class HERReplayBuffer:
         episode_len = len(states)
         for i in range(episode_len - 1):
             done = i == episode_len - 2
-            reward = float(self.reward_fn(np.asarray(achieved_goals[i]), np.asarray(goals[i])))
+            reward = float(
+                self.reward_fn(np.asarray(achieved_goals[i]), np.asarray(goals[i]))
+            )
             self.push(
                 state=states[i],
                 action=int(actions[i]),
@@ -297,30 +331,28 @@ class HERReplayBuffer:
                 next_state_rgb=states_rgb[i + 1],
             )
 
-    def _select_hindsight_goal(
-        self, episode: Episode, current_step: int
-    ) -> np.ndarray:
+    def _select_hindsight_goal(self, episode: Episode, current_step: int) -> np.ndarray:
         """Select a hindsight goal from achieved states in the episode.
-        
+
         Args:
             episode: The episode to sample from
             current_step: Current step index in the episode
-            
+
         Returns:
             A hindsight goal (achieved state)
         """
         ep_len = len(episode.achieved_goals)
-        
+
         if self.goal_selection_strategy == "final":
             # Always use the final achieved state goal
             return episode.achieved_goals[-1]
-        
+
         elif self.goal_selection_strategy == "future":
             # Sample from current step onwards (inclusive of current step)
             # This allows the agent to replay with any future state as goal
             selected_step = np.random.randint(current_step, ep_len)
             return episode.achieved_goals[selected_step]
-        
+
         elif self.goal_selection_strategy == "episode":
             # Sample uniformly from all achieved goals in episode
             selected_step = np.random.randint(0, ep_len)
@@ -332,18 +364,18 @@ class HERReplayBuffer:
         device: torch.device,
     ) -> dict[str, torch.Tensor]:
         """Sample a batch of transitions with HER relabeling.
-        
+
         Produces a batch with a mix of:
         - Real transitions (with original goals)
         - Virtual transitions (with hindsight-relabeled goals)
-        
+
         The ratio is controlled by n_sampled_goal: for each real transition,
         n_sampled_goal virtual transitions are generated.
-        
+
         Args:
             batch_size: Number of real transitions to sample
             device: Torch device to place tensors on
-            
+
         Returns:
             Dictionary of batched transition tensors. Total batch size will be
             batch_size * (1 + n_sampled_goal) / (1 + n_sampled_goal), but we
@@ -367,17 +399,19 @@ class HERReplayBuffer:
 
         # Convert to tensors
         states = torch.as_tensor(all_states, dtype=torch.float32, device=device)
-        actions = torch.as_tensor(all_actions, dtype=torch.long, device=device).unsqueeze(
-            1
+        actions = torch.as_tensor(
+            all_actions, dtype=torch.long, device=device
+        ).unsqueeze(1)
+        rewards = torch.as_tensor(
+            all_rewards, dtype=torch.float32, device=device
+        ).unsqueeze(1)
+        next_states = torch.as_tensor(
+            all_next_states, dtype=torch.float32, device=device
         )
-        rewards = torch.as_tensor(all_rewards, dtype=torch.float32, device=device).unsqueeze(
-            1
-        )
-        next_states = torch.as_tensor(all_next_states, dtype=torch.float32, device=device)
         goals = torch.as_tensor(all_goals, dtype=torch.float32, device=device)
 
         dones = torch.as_tensor(
-            np.array([t.done for t in batch]), dtype=torch.float32, device=device
+            np.array([t.done for t in batch]), dtype=torch.bool, device=device
         ).unsqueeze(1)
 
         return {
@@ -397,11 +431,11 @@ class HERReplayBuffer:
         self, batch_size: int, use_hindsight: bool
     ) -> dict[str, np.ndarray | list]:
         """Internal method to sample a batch of transitions.
-        
+
         Args:
             batch_size: Number of transitions to sample
             use_hindsight: If True, replace goals with hindsight-sampled goals
-            
+
         Returns:
             Dictionary of numpy arrays (before tensor conversion)
         """
@@ -441,10 +475,10 @@ class HERReplayBuffer:
 
     def sample_transitions(self, batch_size: int) -> list[HERTransition]:
         """Sample a batch of transitions as HERTransition namedtuples.
-        
+
         Args:
             batch_size: Number of transitions to sample
-            
+
         Returns:
             List of HERTransition objects with mixed real and virtual transitions
         """
@@ -473,10 +507,10 @@ class HERReplayBuffer:
 
     def _sample_single_transition(self, use_hindsight: bool) -> HERTransition:
         """Sample a single transition.
-        
+
         Args:
             use_hindsight: Whether to use hindsight goal relabeling
-            
+
         Returns:
             A single HERTransition
         """

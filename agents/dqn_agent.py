@@ -53,14 +53,20 @@ class DQNAgent:
         elif a_cfg.type == "cnn":
             c, h, w = obs_shape
             self.policy_net = CNNNetwork(
-                c, h, w, num_actions,
+                c,
+                h,
+                w,
+                num_actions,
                 list(a_cfg.conv_channels),
                 list(a_cfg.conv_kernels),
                 list(a_cfg.conv_strides),
                 a_cfg.fc_hidden,
             ).to(self.device)
             self.target_net = CNNNetwork(
-                c, h, w, num_actions,
+                c,
+                h,
+                w,
+                num_actions,
                 list(a_cfg.conv_channels),
                 list(a_cfg.conv_kernels),
                 list(a_cfg.conv_strides),
@@ -71,10 +77,12 @@ class DQNAgent:
 
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        self.target_net.eval()
+        # Q_target parameters are frozen.
+        for p in self.target_net.parameters():
+            p.requires_grad = False
 
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.lr)
-        self.loss_fn = nn.HuberLoss()
+        self.loss_fn = nn.SmoothL1Loss()
 
         replay_type = str(getattr(a_cfg, "replay_buffer_type", "standard")).lower()
         if replay_type == "her":
@@ -84,7 +92,11 @@ class DQNAgent:
 
             def _reward_fn(achieved_goal: np.ndarray, goal: np.ndarray) -> float:
                 # Sparse binary reward used by HER relabeling.
-                return 0.0 if np.allclose(achieved_goal, goal, atol=goal_tolerance) else -1.0
+                return (
+                    0.0
+                    if np.allclose(achieved_goal, goal, atol=goal_tolerance)
+                    else -1.0
+                )
 
             self.replay_buffer = HERReplayBuffer(
                 capacity=self.buffer_size,
@@ -131,10 +143,6 @@ class DQNAgent:
             return int(q_values.argmax(dim=1).item())
 
     def optimize(self) -> float:
-        """Sample a batch from replay buffer and perform one gradient step.
-
-        Returns the loss value, or 0.0 if the buffer has insufficient samples.
-        """
         if len(self.replay_buffer) < self.batch_size:
             return 0.0
 
@@ -145,39 +153,59 @@ class DQNAgent:
         next_states = batch["next_states"]
         dones = batch["dones"]
 
-        # Q(s, a) from policy net
-        q_values = self.policy_net(states).gather(1, actions)
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = ~dones.squeeze(1)
+        non_final_next_states = next_states[non_final_mask]
 
-        # max_a' Q_target(s', a') — no action masking on target for simplicity
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+        # columns of actions taken. These are the actions which would've been taken
+        # for each batch state according to policy_net
+        state_action_values = self.policy_net(states).gather(1, actions)
+
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1).values
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        next_state_values = torch.zeros((self.batch_size, 1), device=self.device)
         with torch.no_grad():
-            next_q = self.target_net(next_states).max(dim=1, keepdim=True).values
-            target = rewards + self.gamma * next_q * (1.0 - dones)
+            next_state_values[non_final_mask] = self.target_net(
+                non_final_next_states
+            ).max(1).values.unsqueeze(1)
+        # Compute the expected Q values
+        expected_state_action_values = (next_state_values * self.gamma) + rewards
 
-        loss = self.loss_fn(q_values, target)
+        # Compute Huber loss
+        loss = self.loss_fn(state_action_values, expected_state_action_values)
 
+        # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
+        # In-place gradient clipping
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
 
         return loss.item()
 
     def update_target_net(self) -> None:
-        """Soft-update target network: theta_target = tau*theta_policy + (1-tau)*theta_target."""
-        for tp, pp in zip(
-            self.target_net.parameters(), self.policy_net.parameters()
-        ):
-            # TODO: CHECK
-            tp.data.copy_(self.tau * pp.data + (1.0 - self.tau) * tp.data)
+        """Soft update of the target network's weights.
+        θ′ ← τ θ + (1 −τ )θ′
+        """
+        target_net_state_dict = self.target_net.state_dict()
+        policy_net_state_dict = self.policy_net.state_dict()
+        for key in policy_net_state_dict:
+            target_net_state_dict[key] = policy_net_state_dict[
+                key
+            ] * self.tau + target_net_state_dict[key] * (1 - self.tau)
+        self.target_net.load_state_dict(target_net_state_dict)
 
     # --- Dyad support methods ---
 
     def compute_q_values(self, states: np.ndarray) -> torch.Tensor:
         """Compute Q-values for a batch of states using the policy network."""
         with torch.no_grad():
-            states_t = torch.as_tensor(
-                states, dtype=torch.float32, device=self.device
-            )
+            states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
             return self.policy_net(states_t)
 
     def compute_expected_return(self, transitions: list[Transition]) -> np.ndarray:

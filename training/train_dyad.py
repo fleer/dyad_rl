@@ -66,6 +66,7 @@ def _share_experience(
     ]
     expected_returns = rater.compute_expected_return(transitions_for_rating)
 
+    # TODO: Consider
     # Compute actual cumulative discounted return from provider's trajectory
     actual_returns = np.zeros(len(provider_trajectory), dtype=np.float32)
     running_return = 0.0

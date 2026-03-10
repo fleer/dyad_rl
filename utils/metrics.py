@@ -43,14 +43,16 @@ class MetricsLogger:
         epsilon: float = 0.0,
         loss: float = 0.0,
     ) -> None:
-        self.episodes.append(EpisodeRecord(
-            episode=episode,
-            total_return=total_return,
-            length=length,
-            success=success,
-            epsilon=epsilon,
-            loss=loss,
-        ))
+        self.episodes.append(
+            EpisodeRecord(
+                episode=episode,
+                total_return=total_return,
+                length=length,
+                success=success,
+                epsilon=epsilon,
+                loss=loss,
+            )
+        )
 
     def log_eval(self, record: EvalRecord) -> None:
         self.evals.append(record)
@@ -77,8 +79,10 @@ class MetricsLogger:
         returns = [e.total_return for e in recent]
         lengths = [e.length for e in recent]
         successes = [e.success for e in recent]
+        loss = [e.loss for e in recent]
         return {
             "avg_return": sum(returns) / len(returns),
             "avg_length": sum(lengths) / len(lengths),
             "win_rate": sum(successes) / len(successes),
+            "avg_loss": sum(loss) / len(loss),
         }
