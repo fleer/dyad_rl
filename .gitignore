@@ -210,3 +210,5 @@ outputs/
 results/
 checkpoints/
 logs/
+
+.hydra/

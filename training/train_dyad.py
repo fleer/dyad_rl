@@ -8,7 +8,8 @@ from omegaconf import DictConfig
 from agents.dqn_agent import DQNAgent
 from utils.replay_buffer import Transition
 from utils.metrics import MetricsLogger, EvalRecord
-from evaluation.evaluate import evaluate, collect_eval_trajectory
+from evaluation.evaluate import evaluate, evaluate_masked_random, collect_eval_trajectory
+from utils.obs_processing import normalize_rgb
 from training.train_single import _run_episode, prefill_buffer
 
 log = logging.getLogger(__name__)
@@ -50,7 +51,7 @@ def _share_experience(
 
     rater_states_arr = np.array(rater_states, dtype=np.float32)
     if rater.obs_type == "rgb":
-        rater_states_arr = rater_states_arr.astype(np.float32) / 255.0
+        rater_states_arr = normalize_rgb(rater_states_arr)
 
     # Compute rater's Q-values for the provider's (state, action) pairs
     actions = [step["action"] for step in provider_trajectory]
@@ -58,9 +59,14 @@ def _share_experience(
         Transition(
             state=rater_states_arr[i],
             action=actions[i],
-            reward=0, next_state=None, done=False,
-            state_discrete=None, next_state_discrete=None,
-            state_rgb=None, next_state_rgb=None,
+            reward=0,
+            next_state=np.zeros_like(rater_states_arr[i]),
+            done=False,
+            next_action_mask=None,
+            state_discrete=None,
+            next_state_discrete=None,
+            state_rgb=None,
+            next_state_rgb=None,
         )
         for i in range(len(provider_trajectory))
     ]
@@ -88,7 +94,7 @@ def _share_experience(
             # Build transition using rater-compatible observations
             rater_next_s = step.get(rater_next_obs_key)
             if rater_next_s is not None and rater.obs_type == "rgb":
-                rater_next_s = rater_next_s.astype(np.float32) / 255.0
+                rater_next_s = normalize_rgb(rater_next_s)
             elif rater_next_s is None:
                 continue
 
@@ -98,6 +104,7 @@ def _share_experience(
                 reward=step["reward"],
                 next_state=rater_next_s,
                 done=step["done"],
+                next_action_mask=step.get("next_action_mask"),
                 state_discrete=step.get("state_discrete"),
                 next_state_discrete=step.get("next_state_discrete"),
                 state_rgb=step.get("state_rgb"),
@@ -160,6 +167,15 @@ def train_dyad(
     best_win_rate_b = -1.0
     total_shared_to_a = 0
     total_shared_to_b = 0
+    baseline_a = evaluate_masked_random(env_a, n_episodes=eval_episodes, max_steps=max_steps)
+    baseline_b = evaluate_masked_random(env_b, n_episodes=eval_episodes, max_steps=max_steps)
+    logger_a.log_baseline("masked_random", baseline_a, eval_episodes, max_steps)
+    logger_b.log_baseline("masked_random", baseline_b, eval_episodes, max_steps)
+    log.info(
+        "Masked-random baselines | "
+        f"Agent A env WR={baseline_a['win_rate']:.3f}, Ret={baseline_a['avg_return']:.1f} | "
+        f"Agent B env WR={baseline_b['win_rate']:.3f}, Ret={baseline_b['avg_return']:.1f}"
+    )
 
     if cfg.training.get("prefill_buffer", True):
         prefill_buffer(agent_a, env_a, agent_a.buffer_size, max_steps, dual_obs=True)
@@ -227,6 +243,7 @@ def train_dyad(
                 ("A", agent_a, env_a, logger_a, best_win_rate_a, dir_a),
                 ("B", agent_b, env_b, logger_b, best_win_rate_b, dir_b),
             ]:
+                baseline = baseline_a if name == "A" else baseline_b
                 result = evaluate(agent, env, n_episodes=eval_episodes, max_steps=max_steps)
                 record = EvalRecord(
                     episode=episode,
@@ -241,7 +258,9 @@ def train_dyad(
                     f"  EVAL Agent {name} @ {episode}: "
                     f"WR={result['win_rate']:.3f} "
                     f"Ret={result['avg_return']:.1f} "
-                    f"Len={result['avg_length']:.0f}"
+                    f"Len={result['avg_length']:.0f} "
+                    f"DeltaWR={result['win_rate'] - baseline['win_rate']:+.3f} "
+                    f"DeltaRet={result['avg_return'] - baseline['avg_return']:+.1f}"
                 )
                 if result["win_rate"] > best_wr:
                     if name == "A":
@@ -258,8 +277,10 @@ def train_dyad(
     # Save final metrics and models
     logger_a.save_csv()
     logger_a.save_eval_json()
+    logger_a.save_baseline_json()
     logger_b.save_csv()
     logger_b.save_eval_json()
+    logger_b.save_baseline_json()
     agent_a.save(os.path.join(dir_a, "final_model.pt"))
     agent_b.save(os.path.join(dir_b, "final_model.pt"))
 

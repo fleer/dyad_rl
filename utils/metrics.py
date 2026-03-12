@@ -24,6 +24,16 @@ class EvalRecord:
     std_length: float
 
 
+@dataclass
+class BaselineRecord:
+    name: str
+    avg_return: float
+    win_rate: float
+    avg_length: float
+    n_episodes: int
+    max_steps: int
+
+
 class MetricsLogger:
     """Tracks training and evaluation metrics, writes CSV and JSON outputs."""
 
@@ -32,6 +42,7 @@ class MetricsLogger:
         self.agent_name = agent_name
         self.episodes: list[EpisodeRecord] = []
         self.evals: list[EvalRecord] = []
+        self.baselines: list[BaselineRecord] = []
         os.makedirs(log_dir, exist_ok=True)
 
     def log_episode(
@@ -57,6 +68,24 @@ class MetricsLogger:
     def log_eval(self, record: EvalRecord) -> None:
         self.evals.append(record)
 
+    def log_baseline(
+        self,
+        name: str,
+        result: dict,
+        n_episodes: int,
+        max_steps: int,
+    ) -> None:
+        self.baselines.append(
+            BaselineRecord(
+                name=name,
+                avg_return=result["avg_return"],
+                win_rate=result["win_rate"],
+                avg_length=result["avg_length"],
+                n_episodes=n_episodes,
+                max_steps=max_steps,
+            )
+        )
+
     def save_csv(self, path: str | None = None) -> None:
         path = path or os.path.join(self.log_dir, f"{self.agent_name}_training.csv")
         if not self.episodes:
@@ -71,6 +100,11 @@ class MetricsLogger:
         path = path or os.path.join(self.log_dir, f"{self.agent_name}_eval.json")
         with open(path, "w") as f:
             json.dump([asdict(e) for e in self.evals], f, indent=2)
+
+    def save_baseline_json(self, path: str | None = None) -> None:
+        path = path or os.path.join(self.log_dir, f"{self.agent_name}_baselines.json")
+        with open(path, "w") as f:
+            json.dump([asdict(b) for b in self.baselines], f, indent=2)
 
     def get_recent_stats(self, window: int = 100) -> dict:
         recent = self.episodes[-window:]

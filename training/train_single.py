@@ -7,28 +7,18 @@ from omegaconf import DictConfig
 
 from agents.dqn_agent import DQNAgent
 from utils.metrics import MetricsLogger, EvalRecord
-from evaluation.evaluate import evaluate
+from utils.obs_processing import process_obs
+from evaluation.evaluate import evaluate, evaluate_masked_random
 
 log = logging.getLogger(__name__)
 
-
-def _process_obs(obs: dict | np.ndarray, agent_obs_type: str, dual_obs: bool) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
-    """Extract agent obs and both modality obs from an environment observation.
-
-    Returns (agent_obs, state_discrete, state_rgb).
-    """
-    if dual_obs:
-        state_discrete = obs["puzzle_state"]
-        state_rgb = obs["pixels"]
-        if agent_obs_type == "rgb":
-            agent_obs = state_rgb.astype(np.float32) / 255.0
-        else:
-            agent_obs = state_discrete
-        return agent_obs, state_discrete, state_rgb
-    elif agent_obs_type == "rgb":
-        return obs["pixels"].astype(np.float32) / 255.0, None, None
-    else:
-        return obs, None, None
+def _is_episode_done(
+    terminated: bool,
+    truncated: bool,
+    step_index: int,
+    max_steps: int,
+) -> bool:
+    return terminated or truncated or (step_index + 1) >= max_steps
 
 
 def prefill_buffer(
@@ -43,24 +33,36 @@ def prefill_buffer(
     collected = 0
     while collected < num_transitions:
         obs_raw, info = env.reset()
-        obs, state_discrete, state_rgb = _process_obs(obs_raw, agent.obs_type, dual_obs)
+        obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs)
 
-        for _ in range(max_steps):
+        for step in range(max_steps):
             action_mask = env.action_masks()
             valid_actions = np.where(action_mask)[0]
             action = int(np.random.choice(valid_actions))
 
             next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
-            next_obs, next_state_discrete, next_state_rgb = _process_obs(
+            next_obs, next_state_discrete, next_state_rgb = process_obs(
                 next_obs_raw, agent.obs_type, dual_obs
             )
 
-            done = terminated or truncated
+            done = _is_episode_done(terminated, truncated, step, max_steps)
+            next_action_mask = (
+                np.zeros(env.action_space.n, dtype=bool)
+                if done
+                else np.asarray(env.action_masks(), dtype=bool)
+            )
 
             agent.replay_buffer.push(
-                obs, action, reward, next_obs, done,
-                state_discrete, next_state_discrete,
-                state_rgb, next_state_rgb,
+                obs,
+                action,
+                reward,
+                next_obs,
+                done,
+                next_action_mask,
+                state_discrete,
+                next_state_discrete,
+                state_rgb,
+                next_state_rgb,
             )
             collected += 1
             obs = next_obs
@@ -80,7 +82,7 @@ def _run_episode(
 ) -> tuple[float, int, bool, float]:
     """Run one training episode. Returns (total_return, length, success, avg_loss)."""
     obs_raw, info = env.reset()
-    obs, state_discrete, state_rgb = _process_obs(obs_raw, agent.obs_type, dual_obs)
+    obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs)
 
     total_return = 0.0
     total_loss = 0.0
@@ -91,16 +93,28 @@ def _run_episode(
         action = agent.select_action(obs, action_mask, explore=True)
 
         next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
-        next_obs, next_state_discrete, next_state_rgb = _process_obs(
+        next_obs, next_state_discrete, next_state_rgb = process_obs(
             next_obs_raw, agent.obs_type, dual_obs
         )
 
-        done = terminated or truncated
+        done = _is_episode_done(terminated, truncated, step, max_steps)
+        next_action_mask = (
+            np.zeros(env.action_space.n, dtype=bool)
+            if done
+            else np.asarray(env.action_masks(), dtype=bool)
+        )
 
         agent.replay_buffer.push(
-            obs, action, reward, next_obs, done,
-            state_discrete, next_state_discrete,
-            state_rgb, next_state_rgb,
+            obs,
+            action,
+            reward,
+            next_obs,
+            done,
+            next_action_mask,
+            state_discrete,
+            next_state_discrete,
+            state_rgb,
+            next_state_rgb,
         )
 
         loss = agent.optimize()
@@ -152,6 +166,18 @@ def train_single(
 
     os.makedirs(checkpoint_dir, exist_ok=True)
     best_win_rate = -1.0
+    baseline_result = evaluate_masked_random(
+        env,
+        n_episodes=eval_episodes,
+        max_steps=max_steps,
+    )
+    logger.log_baseline("masked_random", baseline_result, eval_episodes, max_steps)
+    log.info(
+        "Masked-random baseline | "
+        f"Win Rate: {baseline_result['win_rate']:.3f} | "
+        f"Avg Return: {baseline_result['avg_return']:.1f} | "
+        f"Avg Length: {baseline_result['avg_length']:.0f}"
+    )
 
     if cfg.training.get("prefill_buffer", True):
         prefill_buffer(agent, env, buffer_size, max_steps, dual_obs)
@@ -198,7 +224,9 @@ def train_single(
             log.info(
                 f"  EVAL @ {episode}: Win Rate={eval_result['win_rate']:.3f} | "
                 f"Avg Return={eval_result['avg_return']:.1f} | "
-                f"Avg Length={eval_result['avg_length']:.0f}"
+                f"Avg Length={eval_result['avg_length']:.0f} | "
+                f"Delta WR={eval_result['win_rate'] - baseline_result['win_rate']:+.3f} | "
+                f"Delta Ret={eval_result['avg_return'] - baseline_result['avg_return']:+.1f}"
             )
 
             # Save best model
@@ -214,6 +242,7 @@ def train_single(
     # Save final metrics
     logger.save_csv()
     logger.save_eval_json()
+    logger.save_baseline_json()
     agent.save(os.path.join(checkpoint_dir, "final_model.pt"))
 
     return best_win_rate

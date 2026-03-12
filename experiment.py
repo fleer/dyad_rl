@@ -16,6 +16,9 @@ Usage:
     # Evaluation only
     python experiment.py +experiment=baseline_mlp mode=eval experiment_name=baseline_mlp
 
+    # Masked-random baseline only
+    python experiment.py +experiment=baseline_mlp mode=baseline experiment_name=baseline_mlp
+
     # Optuna hyperparameter sweep (MLP / CNN / dyad)
     python experiment.py --multirun --config-name=sweep_mlp
     python experiment.py --multirun --config-name=sweep_cnn
@@ -36,7 +39,7 @@ from utils.env_factory import make_env, make_dual_obs_env
 from utils.metrics import MetricsLogger
 from training.train_single import train_single
 from training.train_dyad import train_dyad
-from evaluation.evaluate import evaluate
+from evaluation.evaluate import evaluate, evaluate_masked_random
 
 log = logging.getLogger(__name__)
 
@@ -158,6 +161,27 @@ def run_eval(cfg: DictConfig) -> None:
     log.info(f"Evaluation results: {result}")
 
 
+def run_baseline(cfg: DictConfig) -> dict:
+    """Evaluate the masked-random baseline and persist the result."""
+    env = make_env(cfg)
+    result = evaluate_masked_random(
+        env,
+        n_episodes=cfg.training.eval_episodes,
+        max_steps=cfg.training.max_steps,
+    )
+    results_dir = os.path.join("results", cfg.experiment_name)
+    logger = MetricsLogger(results_dir, agent_name=cfg.experiment_name)
+    logger.log_baseline(
+        "masked_random",
+        result,
+        cfg.training.eval_episodes,
+        cfg.training.max_steps,
+    )
+    logger.save_baseline_json()
+    log.info(f"Masked-random baseline results: {result}")
+    return result
+
+
 @hydra.main(config_path="config", config_name="default", version_base=None)
 def main(cfg: DictConfig) -> float | None:
     # Set random seeds
@@ -171,6 +195,9 @@ def main(cfg: DictConfig) -> float | None:
             return run_train_single(cfg)
     elif cfg.mode == "eval":
         run_eval(cfg)
+        return None
+    elif cfg.mode == "baseline":
+        run_baseline(cfg)
         return None
     else:
         raise ValueError(f"Unknown mode: {cfg.mode}")

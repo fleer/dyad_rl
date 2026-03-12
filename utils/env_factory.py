@@ -4,6 +4,10 @@ import numpy as np
 from omegaconf import DictConfig
 
 import rlp  # noqa: F401 — registers rlp/Puzzle-v0
+from utils.obs_processing import (
+    NormalizeDualPuzzleStateWrapper,
+    NormalizePuzzleStateWrapper,
+)
 
 
 class ActionMaskWrapper(gym.Wrapper):
@@ -32,6 +36,7 @@ def make_env(cfg: DictConfig) -> gym.Env:
     )
     if cfg.env.obs_type == "puzzle_state":
         env = FlattenObservation(env)
+        env = NormalizePuzzleStateWrapper(env)
     env = ActionMaskWrapper(env)
     return env
 
@@ -53,5 +58,6 @@ def make_dual_obs_env(cfg: DictConfig) -> gym.Env:
         include_cursor_in_state_info=cfg.env.include_cursor_in_state_info,
         params=cfg.env.params,
     )
+    env = NormalizeDualPuzzleStateWrapper(env)
     env = ActionMaskWrapper(env)
     return env

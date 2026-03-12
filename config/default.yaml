@@ -4,7 +4,7 @@ defaults:
   - training: dqn
   - _self_
 
-mode: train  # train | eval
+mode: train  # train | eval | baseline
 experiment_name: default
 seed: 42
 device: auto  # auto | cpu | cuda | rocm

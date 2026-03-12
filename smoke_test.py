@@ -18,6 +18,7 @@ import rlp
 
 from agents.dqn_agent import DQNAgent
 from agents.networks import MLPNetwork, CNNNetwork
+from evaluation.evaluate import evaluate_masked_random
 from utils.replay_buffer import ReplayBuffer
 from utils.env_factory import make_env, make_dual_obs_env
 
@@ -47,6 +48,7 @@ def test_replay_buffer():
             reward=float(np.random.randn()),
             next_state=np.random.randn(20).astype(np.float32),
             done=bool(np.random.random() > 0.9),
+            next_action_mask=np.ones(5, dtype=bool),
         )
     assert len(buf) == 500
     batch = buf.sample(64, torch.device("cpu"))
@@ -98,6 +100,7 @@ def test_env_and_agent():
     env = make_env(cfg)
     obs, info = env.reset(seed=42)
     print(f"  Obs shape (flattened): {obs.shape}")
+    print(f"  Obs range: [{obs.min():.3f}, {obs.max():.3f}]")
     print(f"  Action space: {env.action_space}")
     mask = env.action_masks()
     print(f"  Action mask: {mask}")
@@ -129,12 +132,25 @@ def test_env_and_agent():
         mask = env.action_masks()
         action = agent.select_action(obs, mask, explore=True)
         next_obs, reward, term, trunc, info = env.step(action)
-        agent.replay_buffer.push(obs, action, reward, next_obs, term or trunc)
+        done = term or trunc or (step + 1) >= 200
+        next_action_mask = (
+            np.zeros(env.action_space.n, dtype=bool)
+            if done
+            else np.asarray(env.action_masks(), dtype=bool)
+        )
+        agent.replay_buffer.push(
+            obs,
+            action,
+            reward,
+            next_obs,
+            done,
+            next_action_mask,
+        )
         loss = agent.optimize()
         agent.update_target_net()
         total_return += reward
         obs = next_obs
-        if term or trunc:
+        if done:
             break
 
     print(f"  Episode: {step+1} steps, return={total_return}, buffer={len(agent.replay_buffer)}")
@@ -172,9 +188,20 @@ def test_dual_obs_standalone():
     print("  Dual obs environment OK")
 
 
+def test_masked_random_baseline():
+    print("=== Testing Masked Random Baseline ===")
+    cfg = _make_cfg()
+    env = make_env(cfg)
+    result = evaluate_masked_random(env, n_episodes=5, max_steps=50)
+    assert 0.0 <= result["win_rate"] <= 1.0
+    assert result["avg_length"] > 0
+    print(f"  Baseline result: {result}")
+
+
 if __name__ == "__main__":
     test_networks()
     test_replay_buffer()
     test_dual_obs_standalone()
     test_env_and_agent()
+    test_masked_random_baseline()
     print("\n=== All smoke tests PASSED ===")

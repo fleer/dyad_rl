@@ -2,25 +2,15 @@ import gymnasium as gym
 import numpy as np
 
 from agents.dqn_agent import DQNAgent
+from utils.obs_processing import process_obs
 
-
-def _process_obs(obs: dict | np.ndarray, agent_obs_type: str, dual_obs: bool) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
-    """Extract agent obs and both modality obs from an environment observation.
-
-    Returns (agent_obs, state_discrete, state_rgb).
-    """
-    if dual_obs:
-        state_discrete = obs["puzzle_state"]
-        state_rgb = obs["pixels"]
-        if agent_obs_type == "rgb":
-            agent_obs = state_rgb.astype(np.float32) / 255.0
-        else:
-            agent_obs = state_discrete
-        return agent_obs, state_discrete, state_rgb
-    elif agent_obs_type == "rgb":
-        return obs["pixels"].astype(np.float32) / 255.0, None, None
-    else:
-        return obs, None, None
+def _is_episode_done(
+    terminated: bool,
+    truncated: bool,
+    step_index: int,
+    max_steps: int,
+) -> bool:
+    return terminated or truncated or (step_index + 1) >= max_steps
 
 
 def evaluate(
@@ -47,20 +37,21 @@ def evaluate(
 
     for _ in range(n_episodes):
         obs_raw, info = env.reset()
-        obs, _, _ = _process_obs(obs_raw, agent.obs_type, dual_obs)
+        obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
 
         total_return = 0.0
+        reward = 0.0
 
         for step in range(max_steps):
             action_mask = env.action_masks()
             action = agent.select_action(obs, action_mask, explore=False)
 
             obs_raw, reward, terminated, truncated, info = env.step(action)
-            obs, _, _ = _process_obs(obs_raw, agent.obs_type, dual_obs)
+            obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
 
             total_return += reward
 
-            if terminated or truncated:
+            if _is_episode_done(terminated, truncated, step, max_steps):
                 break
 
         returns.append(total_return)
@@ -82,6 +73,41 @@ def evaluate(
     }
 
 
+def evaluate_masked_random(
+    env: gym.Env,
+    n_episodes: int = 100,
+    max_steps: int = 10000,
+) -> dict:
+    """Evaluate a masked-random policy as a regression baseline."""
+    returns: list[float] = []
+    lengths: list[int] = []
+    successes: list[bool] = []
+
+    for episode in range(n_episodes):
+        obs_raw, info = env.reset(seed=episode)
+        total_return = 0.0
+        reward = 0.0
+
+        for step in range(max_steps):
+            valid_actions = np.where(env.action_masks())[0]
+            action = int(np.random.choice(valid_actions))
+            obs_raw, reward, terminated, truncated, info = env.step(action)
+            total_return += reward
+
+            if _is_episode_done(terminated, truncated, step, max_steps):
+                break
+
+        returns.append(total_return)
+        lengths.append(step + 1)
+        successes.append(reward > 0)
+
+    return {
+        "avg_return": float(np.mean(returns)),
+        "win_rate": float(np.mean(successes)),
+        "avg_length": float(np.mean(lengths)),
+    }
+
+
 def collect_eval_trajectory(
     agent: DQNAgent,
     env: gym.Env,
@@ -94,18 +120,23 @@ def collect_eval_trajectory(
     """
     trajectory: list[dict] = []
     obs_raw, info = env.reset()
-    obs, state_discrete, state_rgb = _process_obs(obs_raw, agent.obs_type, dual_obs=True)
+    obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs=True)
 
-    for _ in range(max_steps):
+    for step in range(max_steps):
         action_mask = env.action_masks()
         action = agent.select_action(obs, action_mask, explore=False)
 
         next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
-        next_obs, next_state_discrete, next_state_rgb = _process_obs(
+        next_obs, next_state_discrete, next_state_rgb = process_obs(
             next_obs_raw, agent.obs_type, dual_obs=True
         )
 
-        done = terminated or truncated
+        done = _is_episode_done(terminated, truncated, step, max_steps)
+        next_action_mask = (
+            np.zeros(env.action_space.n, dtype=bool)
+            if done
+            else np.asarray(env.action_masks(), dtype=bool)
+        )
 
         trajectory.append({
             "state": obs,
@@ -113,6 +144,7 @@ def collect_eval_trajectory(
             "reward": reward,
             "next_state": next_obs,
             "done": done,
+            "next_action_mask": next_action_mask,
             "state_discrete": state_discrete,
             "next_state_discrete": next_state_discrete,
             "state_rgb": state_rgb,

@@ -2,7 +2,8 @@ total_episodes: 10000
 max_steps: 5000
 eval_interval: 1000
 eval_episodes: 100
-checkpoint_interval: 5000
+checkpoint_interval: 1000
 log_interval: 50
-prefill_buffer: true
+#TODO: Move to agent config
+prefill_buffer: false
 dyad: false

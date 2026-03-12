@@ -13,6 +13,7 @@ Transition = namedtuple(
         "reward",
         "next_state",
         "done",
+        "next_action_mask",
         "state_discrete",
         "next_state_discrete",
         "state_rgb",
@@ -28,6 +29,7 @@ HERTransition = namedtuple(
         "reward",
         "next_state",
         "done",
+        "next_action_mask",
         "goal",
         "next_goal",
         "state_discrete",
@@ -65,6 +67,7 @@ class ReplayBuffer:
         reward: float,
         next_state: np.ndarray,
         done: bool,
+        next_action_mask: np.ndarray | None = None,
         state_discrete: np.ndarray | None = None,
         next_state_discrete: np.ndarray | None = None,
         state_rgb: np.ndarray | None = None,
@@ -76,6 +79,7 @@ class ReplayBuffer:
             reward,
             next_state,
             done,
+            next_action_mask,
             state_discrete,
             next_state_discrete,
             state_rgb,
@@ -113,6 +117,26 @@ class ReplayBuffer:
         dones = torch.as_tensor(
             np.array([t.done for t in batch]), dtype=torch.bool, device=device
         ).unsqueeze(1)
+        next_action_masks_raw = [t.next_action_mask for t in batch]
+        next_action_masks = None
+        inferred_mask_size = next(
+            (len(mask) for mask in next_action_masks_raw if mask is not None),
+            None,
+        )
+        if inferred_mask_size is not None:
+            next_action_masks = torch.as_tensor(
+                np.array(
+                    [
+                        mask
+                        if mask is not None
+                        else np.ones(inferred_mask_size, dtype=bool)
+                        for mask in next_action_masks_raw
+                    ],
+                    dtype=bool,
+                ),
+                dtype=torch.bool,
+                device=device,
+            )
 
         return {
             "states": states,
@@ -120,6 +144,7 @@ class ReplayBuffer:
             "rewards": rewards,
             "next_states": next_states,
             "dones": dones,
+            "next_action_masks": next_action_masks,
         }
 
     def sample_transitions(self, batch_size: int) -> list[Transition]:
@@ -229,6 +254,7 @@ class HERReplayBuffer:
                     reward=her_reward,
                     next_state=transition.next_state,
                     done=transition.done,
+                    next_action_mask=transition.next_action_mask,
                     state_discrete=transition.state_discrete,
                     next_state_discrete=transition.next_state_discrete,
                     state_rgb=transition.state_rgb,
@@ -243,6 +269,7 @@ class HERReplayBuffer:
         reward: float,
         next_state: np.ndarray,
         done: bool,
+        next_action_mask: np.ndarray | None = None,
         state_discrete: np.ndarray | None = None,
         next_state_discrete: np.ndarray | None = None,
         state_rgb: np.ndarray | None = None,
@@ -255,6 +282,7 @@ class HERReplayBuffer:
             reward=reward,
             next_state=next_state,
             done=done,
+            next_action_mask=next_action_mask,
             state_discrete=state_discrete,
             next_state_discrete=next_state_discrete,
             state_rgb=state_rgb,
@@ -276,6 +304,7 @@ class HERReplayBuffer:
                 reward=t.reward,
                 next_state=t.next_state,
                 done=t.done,
+                next_action_mask=t.next_action_mask,
                 state_discrete=t.state_discrete,
                 next_state_discrete=t.next_state_discrete,
                 state_rgb=t.state_rgb,
@@ -325,6 +354,7 @@ class HERReplayBuffer:
                 reward=reward,
                 next_state=states[i + 1],
                 done=done,
+                next_action_mask=None,
                 state_discrete=states_discrete[i],
                 next_state_discrete=states_discrete[i + 1],
                 state_rgb=states_rgb[i],
@@ -396,6 +426,7 @@ class HERReplayBuffer:
         all_next_states_discrete = [t.next_state_discrete for t in batch]
         all_states_rgb = [t.state_rgb for t in batch]
         all_next_states_rgb = [t.next_state_rgb for t in batch]
+        next_action_masks_raw = [t.next_action_mask for t in batch]
 
         # Convert to tensors
         states = torch.as_tensor(all_states, dtype=torch.float32, device=device)
@@ -413,6 +444,25 @@ class HERReplayBuffer:
         dones = torch.as_tensor(
             np.array([t.done for t in batch]), dtype=torch.bool, device=device
         ).unsqueeze(1)
+        next_action_masks = None
+        inferred_mask_size = next(
+            (len(mask) for mask in next_action_masks_raw if mask is not None),
+            None,
+        )
+        if inferred_mask_size is not None:
+            next_action_masks = torch.as_tensor(
+                np.array(
+                    [
+                        mask
+                        if mask is not None
+                        else np.ones(inferred_mask_size, dtype=bool)
+                        for mask in next_action_masks_raw
+                    ],
+                    dtype=bool,
+                ),
+                dtype=torch.bool,
+                device=device,
+            )
 
         return {
             "states": states,
@@ -420,6 +470,7 @@ class HERReplayBuffer:
             "rewards": rewards,
             "next_states": next_states,
             "dones": dones,
+            "next_action_masks": next_action_masks,
             "goals": goals,
             "states_discrete": all_states_discrete,
             "next_states_discrete": all_next_states_discrete,
@@ -495,6 +546,7 @@ class HERReplayBuffer:
                     reward=t.reward,
                     next_state=t.next_state,
                     done=t.done,
+                    next_action_mask=t.next_action_mask,
                     goal=np.zeros(1, dtype=np.float32),
                     next_goal=np.zeros(1, dtype=np.float32),
                     state_discrete=t.state_discrete,
@@ -521,6 +573,7 @@ class HERReplayBuffer:
             reward=transition.reward,
             next_state=transition.next_state,
             done=transition.done,
+            next_action_mask=transition.next_action_mask,
             goal=np.zeros(1, dtype=np.float32),
             next_goal=np.zeros(1, dtype=np.float32),
             state_discrete=transition.state_discrete,
