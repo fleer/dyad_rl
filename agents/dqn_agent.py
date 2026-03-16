@@ -1,4 +1,3 @@
-import math
 import os
 
 import numpy as np
@@ -9,6 +8,17 @@ from omegaconf import DictConfig
 
 from agents.networks import MLPNetwork, CNNNetwork
 from utils.replay_buffer import ReplayBuffer, HERReplayBuffer, Transition
+
+
+def polyak_update(params, target_params, tau: float) -> None:
+    """In-place Polyak averaging: target = (1-tau)*target + tau*params.
+
+    Mirrors stable-baselines3 common/utils.py::polyak_update.
+    With tau=1.0 this is a full hard copy; with tau<1.0 it is a soft update.
+    """
+    with torch.no_grad():
+        for param, target_param in zip(params, target_params):
+            target_param.data.mul_(1 - tau).add_(param.data * tau)
 
 
 class DQNAgent:
@@ -22,6 +32,7 @@ class DQNAgent:
         cfg: DictConfig,
         agent_cfg: DictConfig | None = None,
         device: torch.device | None = None,
+        total_steps: int = 0,
     ):
         self.obs_type = obs_type
         self.obs_shape = obs_shape
@@ -31,24 +42,39 @@ class DQNAgent:
         # Use agent_cfg if provided (for dyad with different configs), else cfg.agent
         a_cfg = agent_cfg if agent_cfg is not None else cfg.agent
 
-        # Hyperparameters from agent config
+        # Hyperparameters from agent config — names mirror SB3 DQN.__init__
         self.batch_size = a_cfg.batch_size
         self.gamma = a_cfg.gamma
-        self.eps_start = a_cfg.eps_start
-        self.eps_end = a_cfg.eps_end
-        self.eps_decay = a_cfg.eps_decay
+        self.exploration_initial_eps = float(a_cfg.exploration_initial_eps)
+        self.exploration_final_eps   = float(a_cfg.exploration_final_eps)
+        self.exploration_fraction    = float(a_cfg.exploration_fraction)
         self.tau = a_cfg.tau
-        self.lr = a_cfg.lr
+        self.learning_rate = a_cfg.learning_rate
         self.buffer_size = a_cfg.buffer_size
+        self.max_grad_norm = float(a_cfg.max_grad_norm)
+        self.target_update_interval = int(a_cfg.target_update_interval)
+        # Linear exploration schedule endpoint (mirrors SB3 LinearSchedule)
+        self._exploration_steps = max(1, int(self.exploration_fraction * total_steps))
+        self._n_calls = 0
 
         # Build networks
         if a_cfg.type == "mlp":
             input_dim = int(np.prod(obs_shape))
+            # Priority: net_arch (SB3 naming) → hidden_size+num_layers (sweep compat) → hidden_sizes (legacy)
+            net_arch = getattr(a_cfg, "net_arch", None)
+            if net_arch is None:
+                hidden_size = getattr(a_cfg, "hidden_size", None)
+                num_layers = getattr(a_cfg, "num_layers", None)
+                if hidden_size is not None and num_layers is not None:
+                    net_arch = [int(hidden_size)] * int(num_layers)
+                else:
+                    net_arch = list(getattr(a_cfg, "hidden_sizes", [64, 64]))
+            hidden_sizes = list(net_arch)
             self.policy_net = MLPNetwork(
-                input_dim, num_actions, list(a_cfg.hidden_sizes)
+                input_dim, num_actions, hidden_sizes
             ).to(self.device)
             self.target_net = MLPNetwork(
-                input_dim, num_actions, list(a_cfg.hidden_sizes)
+                input_dim, num_actions, hidden_sizes
             ).to(self.device)
         elif a_cfg.type == "cnn":
             c, h, w = obs_shape
@@ -81,7 +107,7 @@ class DQNAgent:
         for p in self.target_net.parameters():
             p.requires_grad = False
 
-        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.lr)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
         self.loss_fn = nn.SmoothL1Loss()
 
         replay_type = str(getattr(a_cfg, "replay_buffer_type", "standard")).lower()
@@ -107,6 +133,15 @@ class DQNAgent:
         else:
             self.replay_buffer = ReplayBuffer(self.buffer_size)
         self.steps_done = 0
+        self.current_epsilon = self.exploration_initial_eps
+        self.last_optimize_stats = {
+            "loss": 0.0,
+            "non_zero_reward_frac": 0.0,
+            "terminal_frac": 0.0,
+            "td_abs_zero": 0.0,
+            "td_abs_pos": 0.0,
+            "td_abs_neg": 0.0,
+        }
 
     def select_action(
         self,
@@ -115,8 +150,10 @@ class DQNAgent:
         explore: bool = True,
     ) -> int:
         """Epsilon-greedy action selection with optional action masking."""
-        eps = self.eps_end + (self.eps_start - self.eps_end) * math.exp(
-            -self.steps_done / self.eps_decay
+        # Linear decay: mirrors SB3 LinearSchedule
+        progress = min(1.0, self.steps_done / self._exploration_steps)
+        eps = self.exploration_initial_eps + progress * (
+            self.exploration_final_eps - self.exploration_initial_eps
         )
         self.current_epsilon = eps
         if explore:
@@ -144,6 +181,14 @@ class DQNAgent:
 
     def optimize(self) -> float:
         if len(self.replay_buffer) < self.batch_size:
+            self.last_optimize_stats = {
+                "loss": 0.0,
+                "non_zero_reward_frac": 0.0,
+                "terminal_frac": 0.0,
+                "td_abs_zero": 0.0,
+                "td_abs_pos": 0.0,
+                "td_abs_neg": 0.0,
+            }
             return 0.0
 
         batch = self.replay_buffer.sample(self.batch_size, self.device)
@@ -175,36 +220,63 @@ class DQNAgent:
                 target_q_values = self.target_net(non_final_next_states)
                 if next_action_masks is not None:
                     non_final_next_action_masks = next_action_masks[non_final_mask]
-                    target_q_values = target_q_values.masked_fill(
-                        ~non_final_next_action_masks, float("-inf")
-                    )
-                next_state_values[non_final_mask] = target_q_values.max(1).values.unsqueeze(1)
+                    non_final_indices = non_final_mask.nonzero(as_tuple=False).squeeze(1)
+                    valid_any = non_final_next_action_masks.any(dim=1)
+
+                    # Keep default 0.0 bootstrap for rows with no valid next actions.
+                    if valid_any.any():
+                        masked_q_values = target_q_values[valid_any].masked_fill(
+                            ~non_final_next_action_masks[valid_any], float("-inf")
+                        )
+                        valid_indices = non_final_indices[valid_any]
+                        next_state_values[valid_indices] = masked_q_values.max(1).values.unsqueeze(1)
+                else:
+                    next_state_values[non_final_mask] = target_q_values.max(1).values.unsqueeze(1)
         # Compute the expected Q values
         expected_state_action_values = (next_state_values * self.gamma) + rewards
 
         # Compute Huber loss
         loss = self.loss_fn(state_action_values, expected_state_action_values)
 
+        td_abs_error = (state_action_values - expected_state_action_values).abs().detach()
+        zero_mask = rewards == 0
+        pos_mask = rewards > 0
+        neg_mask = rewards < 0
+
+        def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> float:
+            if mask.any():
+                return float(values[mask].mean().item())
+            return 0.0
+
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        # In-place gradient clipping
-        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
+        # Clip gradient norm (mirrors SB3: clip_grad_norm_ with max_grad_norm=10)
+        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_grad_norm)
         self.optimizer.step()
+
+        self.last_optimize_stats = {
+            "loss": float(loss.item()),
+            "non_zero_reward_frac": float((rewards.abs() > 0).float().mean().item()),
+            "terminal_frac": float(dones.float().mean().item()),
+            "td_abs_zero": _masked_mean(td_abs_error, zero_mask),
+            "td_abs_pos": _masked_mean(td_abs_error, pos_mask),
+            "td_abs_neg": _masked_mean(td_abs_error, neg_mask),
+        }
 
         return loss.item()
 
     def update_target_net(self) -> None:
-        """Soft update of the target network's weights.
-        θ′ ← τ θ + (1 −τ )θ′
+        """Periodic Polyak update of the target network.
+
+        Called every step but only applies the update every target_update_interval calls.
+        With tau=1.0 (default) this is a hard copy — identical to SB3's default behaviour.
+        θ′ ← τ θ + (1 − τ) θ′
         """
-        target_net_state_dict = self.target_net.state_dict()
-        policy_net_state_dict = self.policy_net.state_dict()
-        for key in policy_net_state_dict:
-            target_net_state_dict[key] = policy_net_state_dict[
-                key
-            ] * self.tau + target_net_state_dict[key] * (1 - self.tau)
-        self.target_net.load_state_dict(target_net_state_dict)
+        self._n_calls += 1
+        if self._n_calls % self.target_update_interval != 0:
+            return
+        polyak_update(self.policy_net.parameters(), self.target_net.parameters(), self.tau)
 
     # --- Dyad support methods ---
 

@@ -12,6 +12,11 @@ class EpisodeRecord:
     success: bool
     epsilon: float = 0.0
     loss: float = 0.0
+    non_zero_reward_frac: float = 0.0
+    terminal_frac: float = 0.0
+    td_abs_zero: float = 0.0
+    td_abs_pos: float = 0.0
+    td_abs_neg: float = 0.0
 
 
 @dataclass
@@ -53,6 +58,11 @@ class MetricsLogger:
         success: bool,
         epsilon: float = 0.0,
         loss: float = 0.0,
+        non_zero_reward_frac: float = 0.0,
+        terminal_frac: float = 0.0,
+        td_abs_zero: float = 0.0,
+        td_abs_pos: float = 0.0,
+        td_abs_neg: float = 0.0,
     ) -> None:
         self.episodes.append(
             EpisodeRecord(
@@ -62,6 +72,11 @@ class MetricsLogger:
                 success=success,
                 epsilon=epsilon,
                 loss=loss,
+                non_zero_reward_frac=non_zero_reward_frac,
+                terminal_frac=terminal_frac,
+                td_abs_zero=td_abs_zero,
+                td_abs_pos=td_abs_pos,
+                td_abs_neg=td_abs_neg,
             )
         )
 
@@ -114,9 +129,19 @@ class MetricsLogger:
         lengths = [e.length for e in recent]
         successes = [e.success for e in recent]
         loss = [e.loss for e in recent]
+        non_zero_reward_frac = [e.non_zero_reward_frac for e in recent]
+        terminal_frac = [e.terminal_frac for e in recent]
+        td_abs_zero = [e.td_abs_zero for e in recent]
+        td_abs_pos = [e.td_abs_pos for e in recent]
+        td_abs_neg = [e.td_abs_neg for e in recent]
         return {
             "avg_return": sum(returns) / len(returns),
             "avg_length": sum(lengths) / len(lengths),
             "win_rate": sum(successes) / len(successes),
             "avg_loss": sum(loss) / len(loss),
+            "avg_non_zero_reward_frac": sum(non_zero_reward_frac) / len(non_zero_reward_frac),
+            "avg_terminal_frac": sum(terminal_frac) / len(terminal_frac),
+            "avg_td_abs_zero": sum(td_abs_zero) / len(td_abs_zero),
+            "avg_td_abs_pos": sum(td_abs_pos) / len(td_abs_pos),
+            "avg_td_abs_neg": sum(td_abs_neg) / len(td_abs_neg),
         }

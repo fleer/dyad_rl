@@ -1,17 +1,30 @@
 type: mlp
-hidden_sizes:
+
+# Network architecture — mirrors SB3 policy_kwargs net_arch
+net_arch:
   - 64
   - 64
+
+# Sweep overrides: if both are set, net_arch = [hidden_size] * num_layers
+hidden_size: null
+num_layers: null
+
+# Core DQN hyperparameters — names match SB3 DQN.__init__ exactly
+learning_rate: 1.0e-4          # SB3 default: 1e-4
+buffer_size: 100000            # SB3 default: 1_000_000; reduced due to memory constraints
+learning_starts: 100           # SB3 default: 100 — replaces prefill_buffer
 batch_size: 32
+tau: 1.0                       # SB3 default: 1.0 (hard update every target_update_interval steps)
 gamma: 0.99
-eps_start: 1.
-eps_end: 0.05
-# TODO: Consider increasing eps_decay for better exploration
-eps_decay: 100000
-tau: 0.005
-lr: 1.0e-4
-buffer_size: 10000
-replay_buffer_type: standard # standard | her
+train_freq: 4                  # SB3 default: 4 — optimize every N environment steps
+gradient_steps: 1              # SB3 default: 1 — gradient updates per train call
+target_update_interval: 10000  # SB3 default: 10000 — copy target net every N steps
+exploration_fraction: 0.1      # SB3 default: 0.1 — fraction of training for eps decay
+exploration_initial_eps: 1.0   # SB3 default: 1.0
+exploration_final_eps: 0.05    # SB3 default: 0.05
+max_grad_norm: 10              # SB3 default: 10 — gradient norm clipping threshold
+
+replay_buffer_type: standard   # standard | her
 her_n_sampled_goal: 4
 her_goal_selection_strategy: future # future | final | episode
 her_goal_tolerance: 1.0e-6

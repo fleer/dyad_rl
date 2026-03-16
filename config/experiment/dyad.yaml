@@ -7,15 +7,19 @@ defaults:
 # Both obs types are captured in every transition for cross-modality sharing.
 agent_a:
   type: mlp
-  hidden_sizes: [64, 64, 64]
+  net_arch: [64, 64, 64]
   batch_size: 32
   gamma: 0.99
-  eps_start: 1
-  eps_end: 0.05
-  eps_decay: 250000
-  tau: 0.005
-  lr: 1.0e-4
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.05
+  exploration_fraction: 0.1
+  tau: 1.0
+  learning_rate: 1.0e-4
   buffer_size: 250000
+  train_freq: 4
+  gradient_steps: 1
+  target_update_interval: 10000
+  max_grad_norm: 10
   replay_buffer_type: her  # standard | her
   her_n_sampled_goal: 4
   her_goal_selection_strategy: future  # future | final | episode
@@ -29,12 +33,16 @@ agent_b:
   fc_hidden: 512
   batch_size: 32
   gamma: 0.99
-  eps_start: 0.9
-  eps_end: 0.05
-  eps_decay: 250000
-  tau: 0.005
-  lr: 1.0e-4
+  exploration_initial_eps: 1.0
+  exploration_final_eps: 0.05
+  exploration_fraction: 0.1
+  tau: 1.0
+  learning_rate: 1.0e-4
   buffer_size: 250000
+  train_freq: 4
+  gradient_steps: 1
+  target_update_interval: 10000
+  max_grad_norm: 10
   replay_buffer_type: her  # standard | her
   her_n_sampled_goal: 4
   her_goal_selection_strategy: future  # future | final | episode

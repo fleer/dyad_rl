@@ -150,6 +150,13 @@ def train_dyad(
     log_interval = cfg.training.log_interval
     share_interval = cfg.training.share_interval
     rating_threshold = cfg.training.rating_threshold
+    reward_step_penalty = float(cfg.training.get("reward_step_penalty", 0.0))
+    _cfg_a = cfg.get("agent_a", cfg.agent)
+    _cfg_b = cfg.get("agent_b", cfg.agent)
+    train_freq_a = int(_cfg_a.get("train_freq", 4))
+    gradient_steps_a = int(_cfg_a.get("gradient_steps", 1))
+    train_freq_b = int(_cfg_b.get("train_freq", 4))
+    gradient_steps_b = int(_cfg_b.get("gradient_steps", 1))
 
     # Determine obs keys for cross-rating
     # Agent A rates Agent B's trajectory using A's observation format
@@ -177,18 +184,37 @@ def train_dyad(
         f"Agent B env WR={baseline_b['win_rate']:.3f}, Ret={baseline_b['avg_return']:.1f}"
     )
 
-    if cfg.training.get("prefill_buffer", True):
-        prefill_buffer(agent_a, env_a, agent_a.buffer_size, max_steps, dual_obs=True)
-        prefill_buffer(agent_b, env_b, agent_b.buffer_size, max_steps, dual_obs=True)
+    learning_starts_a = int(_cfg_a.get("learning_starts", 100))
+    learning_starts_b = int(_cfg_b.get("learning_starts", 100))
+    if learning_starts_a > 0:
+        prefill_buffer(agent_a, env_a, learning_starts_a, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty)
+    if learning_starts_b > 0:
+        prefill_buffer(agent_b, env_b, learning_starts_b, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty)
 
     for episode in range(1, total_episodes + 1):
         # Train agent A for 1 episode
-        ret_a, len_a, suc_a, loss_a = _run_episode(agent_a, env_a, max_steps, dual_obs=True)
-        logger_a.log_episode(episode, ret_a, len_a, suc_a, agent_a.current_epsilon, loss_a)
+        ret_a, len_a, suc_a, loss_a, opt_stats_a = _run_episode(agent_a, env_a, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty, train_freq=train_freq_a, gradient_steps=gradient_steps_a)
+        logger_a.log_episode(
+            episode=episode, total_return=ret_a, length=len_a, success=suc_a,
+            epsilon=agent_a.current_epsilon, loss=loss_a,
+            non_zero_reward_frac=opt_stats_a.get("non_zero_reward_frac", 0.0),
+            terminal_frac=opt_stats_a.get("terminal_frac", 0.0),
+            td_abs_zero=opt_stats_a.get("td_abs_zero", 0.0),
+            td_abs_pos=opt_stats_a.get("td_abs_pos", 0.0),
+            td_abs_neg=opt_stats_a.get("td_abs_neg", 0.0),
+        )
 
         # Train agent B for 1 episode
-        ret_b, len_b, suc_b, loss_b = _run_episode(agent_b, env_b, max_steps, dual_obs=True)
-        logger_b.log_episode(episode, ret_b, len_b, suc_b, agent_b.current_epsilon, loss_b)
+        ret_b, len_b, suc_b, loss_b, opt_stats_b = _run_episode(agent_b, env_b, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty, train_freq=train_freq_b, gradient_steps=gradient_steps_b)
+        logger_b.log_episode(
+            episode=episode, total_return=ret_b, length=len_b, success=suc_b,
+            epsilon=agent_b.current_epsilon, loss=loss_b,
+            non_zero_reward_frac=opt_stats_b.get("non_zero_reward_frac", 0.0),
+            terminal_frac=opt_stats_b.get("terminal_frac", 0.0),
+            td_abs_zero=opt_stats_b.get("td_abs_zero", 0.0),
+            td_abs_pos=opt_stats_b.get("td_abs_pos", 0.0),
+            td_abs_neg=opt_stats_b.get("td_abs_neg", 0.0),
+        )
 
         # Experience sharing
         if episode % share_interval == 0:
@@ -225,12 +251,12 @@ def train_dyad(
             stats_b = logger_b.get_recent_stats(window=log_interval)
             log.info(
                 f"Episode {episode}/{total_episodes}\n"
-                f"  Agent A: Ret={stats_a.get('avg_return', 0):.1f} "
+                f"  Agent A: Ret={stats_a.get('avg_return', 0):.3f} "
                 f"WR={stats_a.get('win_rate', 0):.3f} "
                 f"Len={stats_a.get('avg_length', 0):.0f} "
                 f"Eps={agent_a.current_epsilon:.3f} "
                 f"Buf={len(agent_a.replay_buffer)}\n"
-                f"  Agent B: Ret={stats_b.get('avg_return', 0):.1f} "
+                f"  Agent B: Ret={stats_b.get('avg_return', 0):.3f} "
                 f"WR={stats_b.get('win_rate', 0):.3f} "
                 f"Len={stats_b.get('avg_length', 0):.0f} "
                 f"Eps={agent_b.current_epsilon:.3f} "
