@@ -44,10 +44,11 @@ hydra:
         high: 0.5
         log: true
       agent.tau:
-        type: float
-        low: 1e-4
-        high: 0.05
-        log: true
+        type: categorical
+        choices: [0.05, 0.1, 0.5, 1.0]
+      agent.target_update_interval:
+        type: categorical
+        choices: [2500, 5000, 10000, 20000]
       agent.buffer_size:
         type: categorical
         choices: [10000, 50000, 100000]
