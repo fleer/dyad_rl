@@ -4,6 +4,11 @@ import numpy as np
 from agents.dqn_agent import DQNAgent
 from utils.obs_processing import process_obs
 
+
+def _transition_done(terminated: bool) -> bool:
+    """Only true terminals should be marked done for replay-style transitions."""
+    return terminated
+
 def _is_episode_done(
     terminated: bool,
     truncated: bool,
@@ -131,10 +136,11 @@ def collect_eval_trajectory(
             next_obs_raw, agent.obs_type, dual_obs=True
         )
 
-        done = _is_episode_done(terminated, truncated, step, max_steps)
+        episode_done = _is_episode_done(terminated, truncated, step, max_steps)
+        transition_done = _transition_done(terminated)
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)
-            if done
+            if transition_done
             else np.asarray(env.action_masks(), dtype=bool)
         )
 
@@ -143,7 +149,7 @@ def collect_eval_trajectory(
             "action": action,
             "reward": reward,
             "next_state": next_obs,
-            "done": done,
+            "done": transition_done,
             "next_action_mask": next_action_mask,
             "state_discrete": state_discrete,
             "next_state_discrete": next_state_discrete,
@@ -155,7 +161,7 @@ def collect_eval_trajectory(
         state_discrete = next_state_discrete
         state_rgb = next_state_rgb
 
-        if done:
+        if episode_done:
             break
 
     return trajectory

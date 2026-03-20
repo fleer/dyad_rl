@@ -21,6 +21,11 @@ def _is_episode_done(
     return terminated or truncated or (step_index + 1) >= max_steps
 
 
+def _transition_done(terminated: bool) -> bool:
+    """Only true environment terminals should cut off Bellman bootstrapping."""
+    return terminated
+
+
 def prefill_buffer(
     agent: DQNAgent,
     env: gym.Env,
@@ -47,10 +52,11 @@ def prefill_buffer(
                 next_obs_raw, agent.obs_type, dual_obs
             )
 
-            done = _is_episode_done(terminated, truncated, step, max_steps)
+            episode_done = _is_episode_done(terminated, truncated, step, max_steps)
+            transition_done = _transition_done(terminated)
             next_action_mask = (
                 np.zeros(env.action_space.n, dtype=bool)
-                if done
+                if transition_done
                 else np.asarray(env.action_masks(), dtype=bool)
             )
 
@@ -59,7 +65,7 @@ def prefill_buffer(
                 action,
                 shaped_reward,
                 next_obs,
-                done,
+                transition_done,
                 next_action_mask,
                 state_discrete,
                 next_state_discrete,
@@ -71,7 +77,7 @@ def prefill_buffer(
             state_discrete = next_state_discrete
             state_rgb = next_state_rgb
 
-            if done or collected >= num_transitions:
+            if episode_done or collected >= num_transitions:
                 break
     log.info(f"Prefilled buffer with {len(agent.replay_buffer)} transitions.")
 
@@ -111,10 +117,11 @@ def _run_episode(
             next_obs_raw, agent.obs_type, dual_obs
         )
 
-        done = _is_episode_done(terminated, truncated, step, max_steps)
+        episode_done = _is_episode_done(terminated, truncated, step, max_steps)
+        transition_done = _transition_done(terminated)
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)
-            if done
+            if transition_done
             else np.asarray(env.action_masks(), dtype=bool)
         )
 
@@ -123,7 +130,7 @@ def _run_episode(
             action,
             shaped_reward,
             next_obs,
-            done,
+            transition_done,
             next_action_mask,
             state_discrete,
             next_state_discrete,
@@ -143,14 +150,15 @@ def _run_episode(
                     total_td_abs_zero += agent.last_optimize_stats.get("td_abs_zero", 0.0)
                     total_td_abs_pos += agent.last_optimize_stats.get("td_abs_pos", 0.0)
                     total_td_abs_neg += agent.last_optimize_stats.get("td_abs_neg", 0.0)
-            agent.update_target_net()
+        # Keep target-update cadence tied to environment steps (SB3-style).
+        agent.update_target_net()
 
         total_return += reward
         obs = next_obs
         state_discrete = next_state_discrete
         state_rgb = next_state_rgb
 
-        if done:
+        if episode_done:
             break
 
     success = reward > 0  # +100 for solved
