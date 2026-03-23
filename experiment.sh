@@ -138,34 +138,34 @@ run_exp() {
 #   • Resume:               Optuna stores results in SQLite; set
 #                           `hydra.sweeper.storage=sqlite:///sweep.db`
 
-if [ "${SKIP_SWEEPS}" = "0" ]; then
-
-    # ── Sweep 1: MLP baseline ─────────────────────────────────────────────────
-    # Finds optimal DQN hyperparameters for the MLP agent on discrete state.
-    # Results saved to multirun/...
-    run_exp "Optuna sweep — MLP hyperparameters" \
-        --multirun \
-        --config-name=sweep_mlp
-
-    # ── Sweep 2: CNN baseline ─────────────────────────────────────────────────
-    # Same as above but for the CNN agent on RGB pixels. Includes fc_hidden in
-    # the search space since the fully-connected head width matters more for
-    # pixel-based observations.
-    run_exp "Optuna sweep — CNN hyperparameters" \
-        --multirun \
-        --config-name=sweep_cnn
-
-    # ── Sweep 3: Dyad configuration ───────────────────────────────────────────
-    # Searches over independent agent_a / agent_b hyperparameters and the
-    # dyad-specific sharing parameters (share_interval, rating_threshold).
-    # The rating_threshold controls how "surprising" a transition must be to be
-    # accepted into the partner's replay buffer (0.0 = accept anything better
-    # than expected; positive values are more selective).
-    run_exp "Optuna sweep — Dyad sharing hyperparameters" \
-        --multirun \
-        --config-name=sweep_dyad
-
-fi
+#if [ "${SKIP_SWEEPS}" = "0" ]; then
+#
+#    # ── Sweep 1: MLP baseline ─────────────────────────────────────────────────
+#    # Finds optimal DQN hyperparameters for the MLP agent on discrete state.
+#    # Results saved to multirun/...
+#    run_exp "Optuna sweep — MLP hyperparameters" \
+#        --multirun \
+#        --config-name=sweep_mlp
+#
+#    # ── Sweep 2: CNN baseline ─────────────────────────────────────────────────
+#    # Same as above but for the CNN agent on RGB pixels. Includes fc_hidden in
+#    # the search space since the fully-connected head width matters more for
+#    # pixel-based observations.
+#    run_exp "Optuna sweep — CNN hyperparameters" \
+#        --multirun \
+#        --config-name=sweep_cnn
+#
+#    # ── Sweep 3: Dyad configuration ───────────────────────────────────────────
+#    # Searches over independent agent_a / agent_b hyperparameters and the
+#    # dyad-specific sharing parameters (share_interval, rating_threshold).
+#    # The rating_threshold controls how "surprising" a transition must be to be
+#    # accepted into the partner's replay buffer (0.0 = accept anything better
+#    # than expected; positive values are more selective).
+#    run_exp "Optuna sweep — Dyad sharing hyperparameters" \
+#        --multirun \
+#        --config-name=sweep_dyad
+#
+#fi
 
 # =============================================================================
 # SECTION 1 — Experiment 1: Baseline MLP (Discrete State)

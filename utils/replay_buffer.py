@@ -147,9 +147,6 @@ class ReplayBuffer:
             "next_action_masks": next_action_masks,
         }
 
-    def sample_transitions(self, batch_size: int) -> list[Transition]:
-        return random.sample(self.buffer, batch_size)
-
     def __len__(self) -> int:
         return len(self.buffer)
 

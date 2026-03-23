@@ -12,10 +12,8 @@ def _transition_done(terminated: bool) -> bool:
 def _is_episode_done(
     terminated: bool,
     truncated: bool,
-    step_index: int,
-    max_steps: int,
 ) -> bool:
-    return terminated or truncated or (step_index + 1) >= max_steps
+    return terminated or truncated
 
 
 def evaluate(
@@ -56,7 +54,7 @@ def evaluate(
 
             total_return += reward
 
-            if _is_episode_done(terminated, truncated, step, max_steps):
+            if _is_episode_done(terminated, truncated):
                 break
 
         returns.append(total_return)
@@ -99,7 +97,7 @@ def evaluate_masked_random(
             obs_raw, reward, terminated, truncated, info = env.step(action)
             total_return += reward
 
-            if _is_episode_done(terminated, truncated, step, max_steps):
+            if _is_episode_done(terminated, truncated):
                 break
 
         returns.append(total_return)
@@ -124,7 +122,7 @@ def collect_eval_trajectory(
     The env must use obs_type='dual' so both puzzle_state and pixels are available.
     """
     trajectory: list[dict] = []
-    obs_raw, info = env.reset()
+    obs_raw, info = env.reset(seed=42)
     obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs=True)
 
     for step in range(max_steps):
@@ -136,7 +134,7 @@ def collect_eval_trajectory(
             next_obs_raw, agent.obs_type, dual_obs=True
         )
 
-        episode_done = _is_episode_done(terminated, truncated, step, max_steps)
+        episode_done = _is_episode_done(terminated, truncated)
         transition_done = _transition_done(terminated)
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)

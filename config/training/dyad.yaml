@@ -1,12 +1,12 @@
-total_episodes: 100000
-max_steps: 5000
+total_episodes: 10000
+max_steps: 1000
 eval_interval: 1000
 eval_episodes: 100
-checkpoint_interval: 5000
+checkpoint_interval: 1000
 log_interval: 50
 reward_step_penalty: 0.0
 dyad: true
-share_interval: 50
+share_interval: 10
 rating_threshold: 0.0
 # train_freq and gradient_steps are read from agent config (agent_a/agent_b)
 

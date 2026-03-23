@@ -15,10 +15,8 @@ log = logging.getLogger(__name__)
 def _is_episode_done(
     terminated: bool,
     truncated: bool,
-    step_index: int,
-    max_steps: int,
 ) -> bool:
-    return terminated or truncated or (step_index + 1) >= max_steps
+    return terminated or truncated
 
 
 def _transition_done(terminated: bool) -> bool:
@@ -52,7 +50,7 @@ def prefill_buffer(
                 next_obs_raw, agent.obs_type, dual_obs
             )
 
-            episode_done = _is_episode_done(terminated, truncated, step, max_steps)
+            episode_done = _is_episode_done(terminated, truncated)
             transition_done = _transition_done(terminated)
             next_action_mask = (
                 np.zeros(env.action_space.n, dtype=bool)
@@ -117,7 +115,7 @@ def _run_episode(
             next_obs_raw, agent.obs_type, dual_obs
         )
 
-        episode_done = _is_episode_done(terminated, truncated, step, max_steps)
+        episode_done = _is_episode_done(terminated, truncated)
         transition_done = _transition_done(terminated)
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)

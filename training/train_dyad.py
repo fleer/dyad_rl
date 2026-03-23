@@ -96,6 +96,7 @@ def _share_experience(
             if rater_next_s is not None and rater.obs_type == "rgb":
                 rater_next_s = normalize_rgb(rater_next_s)
             elif rater_next_s is None:
+                logging.error(f"Missing next observation for rating at index {i}, skipping transition")
                 continue
 
             accepted.append(Transition(
@@ -219,24 +220,42 @@ def train_dyad(
         # Experience sharing
         if episode % share_interval == 0:
             # Each agent runs 1 eval episode to generate a trajectory
-            traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
-            traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
+            # TODO: Range should be configurable and a parameter!!
+            ret_a = ret_b = 0.0
+            accepted_for_a: list[Transition] = []
+            accepted_for_b: list[Transition] = []
+            traj_a: list[dict] = []
+            traj_b: list[dict] = []
+            for _ in range(100):
+                if ret_a == 0:
+                    traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
+                    ret_a = sum(step["reward"] for step in traj_a)
+                    # Agent B rates Agent A's trajectory using B's own value function
+                    accepted_for_b = _share_experience(
+                        agent_b, traj_a, b_obs_key, b_next_key, rating_threshold
+                    )
+                    agent_b.add_to_buffer(accepted_for_b)
+                    total_shared_to_b += len(accepted_for_b)
+                if ret_b == 0:
+                    traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
+                    ret_b = sum(step["reward"] for step in traj_b)
+                    # Agent A rates Agent B's trajectory using A's own value function
+                    accepted_for_a = _share_experience(
+                        agent_a, traj_b, a_obs_key, a_next_key, rating_threshold
+                    )
+                    # Add accepted transitions to replay buffers
+                    agent_a.add_to_buffer(accepted_for_a)
+                    total_shared_to_a += len(accepted_for_a)
+                if ret_a > 0 and ret_b > 0:
+                    break  # Both agents had successful trajectories, no need to keep sampling
+            
+            if ret_a == 0 and ret_b == 0:
+                log.info(f"  SHARE @ {episode}: Skipping sharing since both trajectories had non-positive return (A={ret_a:.1f}, B={ret_b:.1f})")
+                continue
 
-            # Agent A rates Agent B's trajectory using A's own value function
-            accepted_for_a = _share_experience(
-                agent_a, traj_b, a_obs_key, a_next_key, rating_threshold
-            )
-            # Agent B rates Agent A's trajectory using B's own value function
-            accepted_for_b = _share_experience(
-                agent_b, traj_a, b_obs_key, b_next_key, rating_threshold
-            )
+            
 
-            # Add accepted transitions to replay buffers
-            agent_a.add_to_buffer(accepted_for_a)
-            agent_b.add_to_buffer(accepted_for_b)
 
-            total_shared_to_a += len(accepted_for_a)
-            total_shared_to_b += len(accepted_for_b)
 
             log.info(
                 f"  SHARE @ {episode}: "
