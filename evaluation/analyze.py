@@ -99,7 +99,12 @@ def plot_eval_comparison(
         evals = load_eval_json(json_path)
         episodes = [e["episode"] for e in evals]
         win_rates = [e["win_rate"] for e in evals]
-        ax.plot(episodes, win_rates, marker="o", label=name, alpha=0.8)
+        sem_win_rates = [float(e.get("sem_win_rate", 0.0)) for e in evals]
+        line = ax.plot(episodes, win_rates, marker="o", label=name, alpha=0.85)[0]
+        color = line.get_color()
+        lower = np.clip(np.array(win_rates) - np.array(sem_win_rates), 0.0, 1.0)
+        upper = np.clip(np.array(win_rates) + np.array(sem_win_rates), 0.0, 1.0)
+        ax.fill_between(episodes, lower, upper, color=color, alpha=0.18)
 
     ax.set_xlabel("Episode")
     ax.set_ylabel("Win Rate")

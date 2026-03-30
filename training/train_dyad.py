@@ -293,9 +293,13 @@ def train_dyad(
                 record = EvalRecord(
                     episode=episode,
                     avg_return=result["avg_return"],
+                    sem_return=result["sem_return"],
                     win_rate=result["win_rate"],
+                    sem_win_rate=result["sem_win_rate"],
                     avg_length=result["avg_length"],
+                    sem_length=result["sem_length"],
                     avg_success_length=result["avg_success_length"],
+                    sem_success_length=result["sem_success_length"],
                     std_length=result["std_length"],
                 )
                 lgr.log_eval(record)

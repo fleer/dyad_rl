@@ -266,9 +266,13 @@ def train_single(
             eval_record = EvalRecord(
                 episode=episode,
                 avg_return=eval_result["avg_return"],
+                sem_return=eval_result["sem_return"],
                 win_rate=eval_result["win_rate"],
+                sem_win_rate=eval_result["sem_win_rate"],
                 avg_length=eval_result["avg_length"],
+                sem_length=eval_result["sem_length"],
                 avg_success_length=eval_result["avg_success_length"],
+                sem_success_length=eval_result["sem_success_length"],
                 std_length=eval_result["std_length"],
             )
             logger.log_eval(eval_record)

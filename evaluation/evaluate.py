@@ -16,6 +16,13 @@ def _is_episode_done(
     return terminated or truncated
 
 
+def _sem(values: np.ndarray) -> float:
+    """Return the standard error of the mean for a 1-D array."""
+    if len(values) <= 1:
+        return 0.0
+    return float(values.std(ddof=1) / np.sqrt(len(values)))
+
+
 def evaluate(
     agent: DQNAgent,
     env: gym.Env,
@@ -31,7 +38,7 @@ def evaluate(
         max_steps: Max steps per episode to prevent infinite loops.
 
     Returns:
-        Dict with avg_return, win_rate, avg_length, avg_success_length, std_length.
+        Dict with averages and SEMs for return/win-rate/length metrics.
     """
     dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
     returns: list[float] = []
@@ -66,12 +73,17 @@ def evaluate(
     successes_arr = np.array(successes)
 
     success_lengths = lengths_arr[successes_arr]
+    success_lengths_arr = np.asarray(success_lengths, dtype=float)
 
     return {
         "avg_return": float(returns_arr.mean()),
+        "sem_return": _sem(returns_arr),
         "win_rate": float(successes_arr.mean()),
+        "sem_win_rate": _sem(successes_arr.astype(float)),
         "avg_length": float(lengths_arr.mean()),
+        "sem_length": _sem(lengths_arr),
         "avg_success_length": float(success_lengths.mean()) if len(success_lengths) > 0 else 0.0,
+        "sem_success_length": _sem(success_lengths_arr),
         "std_length": float(lengths_arr.std()),
     }
 

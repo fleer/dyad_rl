@@ -1,7 +1,7 @@
 import csv
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 
 
 @dataclass
@@ -23,9 +23,13 @@ class EpisodeRecord:
 class EvalRecord:
     episode: int
     avg_return: float
+    sem_return: float
     win_rate: float
+    sem_win_rate: float
     avg_length: float
+    sem_length: float
     avg_success_length: float
+    sem_success_length: float
     std_length: float
 
 
