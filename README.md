@@ -143,6 +143,26 @@ Tracked during training and saved to `results/<experiment_name>/`:
 - Training loss and Q-value statistics
 - Action mask usage rate
 
+## Plotting Results
+
+After running experiments, generate comparison plots across all three experiment variants using the standalone plotting script:
+
+```bash
+python plot_results.py
+```
+
+This script loads training CSVs and evaluation JSONs from the results directories and generates:
+
+- **Training Return curves** (`training_return.png`) — Smoothed total reward over episodes for each experiment
+- **Training Win Rate curves** (`training_win_rate.png`) — Smoothed success rate over episodes
+- **Evaluation Win Rate comparison** (`eval_comparison.png`) — Evaluation checkpoints with uncertainty bands (SEM) for each agent
+
+Plots are saved separately for each puzzle size:
+- `results/visualizations/2x3/` — Plots for netslide 2x3b1
+- `results/visualizations/3x3/` — Plots for netslide 3x3b1
+
+The evaluation plots include shaded uncertainty bands around the win-rate curves, reflecting the standard error of the mean (SEM) computed during each evaluation run across multiple episodes.
+
 ## Smoke Test
 
 Verify the full pipeline works end-to-end:
