@@ -22,21 +22,20 @@ def _share_experience(
     rater_next_obs_key: str,
     rating_threshold: float,
 ) -> list[Transition]:
-    """Rate another agent's trajectory and return accepted transitions.
+    """Share Rated Experience.
 
-    The rater evaluates the provider's transitions using its own Q-network.
-    Transitions where the rater's expected Q-value exceeds the threshold
-    (relative to the actual reward) are accepted.
+    Rates another agent's trajectory with the rater's value function and
+    returns transitions that pass the acceptance threshold.
 
     Args:
-        rater: The agent doing the rating.
-        provider_trajectory: List of transition dicts from the provider agent.
-        rater_obs_key: Key for rater-compatible observations ('state_discrete' or 'state_rgb').
-        rater_next_obs_key: Key for rater-compatible next observations.
-        rating_threshold: Minimum Q-value advantage for acceptance.
+        rater (DQNAgent): Agent evaluating the provider trajectory.
+        provider_trajectory (list[dict]): Provider trajectory transitions.
+        rater_obs_key (str): Key for rater-compatible state observations.
+        rater_next_obs_key (str): Key for rater-compatible next observations.
+        rating_threshold (float): Minimum accepted rating value.
 
     Returns:
-        List of accepted Transition namedtuples (using rater-compatible obs format).
+        list[Transition]: Accepted transitions converted to the rater modality.
     """
     if not provider_trajectory:
         return []
@@ -125,23 +124,22 @@ def train_dyad(
     logger_b: MetricsLogger,
     checkpoint_dir: str = "checkpoints",
 ) -> tuple[DQNAgent, DQNAgent]:
-    """Train two DQN agents in a dyad learning setup with experience sharing.
+    """Train Dyad Agents.
 
-    Agent A and Agent B each train independently, and periodically share
-    and rate each other's evaluation trajectories.
+    Trains two DQN agents with periodic cross-rating and experience sharing.
 
     Args:
-        agent_a: First DQN agent (e.g., MLP on discrete state).
-        agent_b: Second DQN agent (e.g., CNN on RGB pixels).
-        env_a: Environment for agent A (obs_type='dual').
-        env_b: Environment for agent B (obs_type='dual').
-        cfg: Hydra config with training and dyad parameters.
-        logger_a: MetricsLogger for agent A.
-        logger_b: MetricsLogger for agent B.
-        checkpoint_dir: Directory for saving model checkpoints.
+        agent_a (DQNAgent): First agent.
+        agent_b (DQNAgent): Second agent.
+        env_a (gym.Env): Environment for first agent.
+        env_b (gym.Env): Environment for second agent.
+        cfg (DictConfig): Dyad training configuration.
+        logger_a (MetricsLogger): Metrics logger for first agent.
+        logger_b (MetricsLogger): Metrics logger for second agent.
+        checkpoint_dir (str): Base directory for checkpoints.
 
     Returns:
-        Tuple of trained (agent_a, agent_b).
+        tuple[DQNAgent, DQNAgent]: Trained agents as ``(agent_a, agent_b)``.
     """
     total_episodes = cfg.training.total_episodes
     max_steps = cfg.training.max_steps

@@ -7,7 +7,16 @@ import numpy as np
 
 
 def load_training_csv(path: str) -> dict[str, list]:
-    """Load a training CSV into a dict of column lists."""
+    """Load Training CSV.
+
+    Loads training metrics CSV data into a dictionary of column lists.
+
+    Args:
+        path (str): Path to a training CSV file.
+
+    Returns:
+        dict[str, list]: Parsed CSV columns as lists.
+    """
     data: dict[str, list] = {}
     with open(path) as f:
         reader = csv.DictReader(f)
@@ -18,12 +27,32 @@ def load_training_csv(path: str) -> dict[str, list]:
 
 
 def load_eval_json(path: str) -> list[dict]:
+    """Load Evaluation JSON.
+
+    Loads evaluation records from a JSON file.
+
+    Args:
+        path (str): Path to an evaluation JSON file.
+
+    Returns:
+        list[dict]: Evaluation record dictionaries.
+    """
     with open(path) as f:
         return json.load(f)
 
 
 def smooth(values: list[float], window: int = 100) -> np.ndarray:
-    """Simple moving average."""
+    """Smooth Series.
+
+    Applies a simple moving average to a sequence.
+
+    Args:
+        values (list[float]): Input values.
+        window (int): Smoothing window size.
+
+    Returns:
+        np.ndarray: Smoothed values.
+    """
     arr = np.array(values)
     if len(arr) < window:
         return arr
@@ -36,12 +65,18 @@ def plot_learning_curves(
     output_dir: str,
     window: int = 100,
 ) -> None:
-    """Plot training return and win rate as separate figures.
+    """Plot Learning Curves.
+
+    Plots and saves smoothed training return and win-rate figures.
 
     Args:
-        experiments: Mapping of experiment_name -> path to training CSV.
-        output_dir: Directory to save plots.
-        window: Smoothing window size.
+        experiments (dict[str, str]): Mapping of experiment names to training
+            CSV paths.
+        output_dir (str): Directory to save output plots.
+        window (int): Moving-average window size.
+
+    Returns:
+        None: Plot image files are written to disk.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -86,11 +121,17 @@ def plot_eval_comparison(
     experiments: dict[str, str],
     output_dir: str,
 ) -> None:
-    """Plot evaluation win rate over training for multiple experiments.
+    """Plot Evaluation Comparison.
+
+    Plots and saves evaluation win-rate trajectories for multiple experiments.
 
     Args:
-        experiments: Mapping of experiment_name -> path to eval JSON.
-        output_dir: Directory to save plots.
+        experiments (dict[str, str]): Mapping of experiment names to evaluation
+            JSON paths.
+        output_dir (str): Directory to save output plot.
+
+    Returns:
+        None: Plot image file is written to disk.
     """
     os.makedirs(output_dir, exist_ok=True)
 

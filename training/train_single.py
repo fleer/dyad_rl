@@ -16,12 +16,36 @@ def _is_episode_done(
     terminated: bool,
     truncated: bool,
 ) -> bool:
+    """Check Episode Completion.
+
+    Determines whether an episode has ended.
+
+    Args:
+        terminated (bool): Environment termination signal.
+        truncated (bool): Environment truncation signal.
+
+    Returns:
+        bool: ``True`` when the episode is done.
+    """
     return terminated or truncated
 
 
-def _transition_done(terminated: bool) -> bool:
-    """Only true environment terminals should cut off Bellman bootstrapping."""
-    return terminated
+def _transition_done(
+    terminated: bool,
+    truncated: bool,
+) -> bool:
+    """Check Transition Terminal State.
+
+    Determines whether a transition should be marked terminal in replay.
+
+    Args:
+        terminated (bool): Environment termination signal.
+        truncated (bool): Environment truncation signal.
+
+    Returns:
+        bool: ``True`` if transition ends an episode boundary.
+    """
+    return terminated or truncated
 
 
 def prefill_buffer(
@@ -32,7 +56,22 @@ def prefill_buffer(
     dual_obs: bool = False,
     reward_step_penalty: float = 0.0,
 ) -> None:
-    """Fill the replay buffer with random transitions before training."""
+    """Prefill Replay Buffer.
+
+    Fills replay memory with random valid transitions before learning starts.
+
+    Args:
+        agent (DQNAgent): Agent whose replay buffer is filled.
+        env (gym.Env): Training environment.
+        num_transitions (int): Number of transitions to collect.
+        max_steps (int): Maximum steps per episode during prefill.
+        dual_obs (bool): Whether environment returns dual observations.
+        reward_step_penalty (float): Per-step shaping penalty subtracted from
+            reward.
+
+    Returns:
+        None: Transitions are written to the replay buffer.
+    """
     log.info(f"Prefilling replay buffer with {num_transitions} random transitions...")
     collected = 0
     while collected < num_transitions:
@@ -51,7 +90,7 @@ def prefill_buffer(
             )
 
             episode_done = _is_episode_done(terminated, truncated)
-            transition_done = _transition_done(terminated)
+            transition_done = _transition_done(terminated, truncated)
             next_action_mask = (
                 np.zeros(env.action_space.n, dtype=bool)
                 if transition_done
@@ -89,9 +128,24 @@ def _run_episode(
     train_freq: int = 4,
     gradient_steps: int = 1,
 ) -> tuple[float, int, bool, float, dict[str, float]]:
-    """Run one training episode.
+    """Run Training Episode.
 
-    Returns (total_return, length, success, avg_loss, avg_opt_stats).
+    Executes one environment episode and performs in-loop DQN optimization.
+
+    Args:
+        agent (DQNAgent): Agent to train.
+        env (gym.Env): Training environment.
+        max_steps (int): Maximum environment steps.
+        dual_obs (bool): Whether to process dual observations.
+        reward_step_penalty (float): Per-step shaping penalty.
+        train_freq (int): Number of environment steps between optimization
+            calls.
+        gradient_steps (int): Number of optimizer steps per train call.
+
+    Returns:
+        tuple[float, int, bool, float, dict[str, float]]: Episode return,
+        episode length, success flag, average loss, and average optimizer
+        diagnostics.
     """
     obs_raw, info = env.reset()
     obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs)
@@ -116,7 +170,7 @@ def _run_episode(
         )
 
         episode_done = _is_episode_done(terminated, truncated)
-        transition_done = _transition_done(terminated)
+        transition_done = _transition_done(terminated, truncated)
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)
             if transition_done
@@ -178,17 +232,20 @@ def train_single(
     logger: MetricsLogger,
     checkpoint_dir: str = "checkpoints",
 ) -> float:
-    """Train a single DQN agent.
+    """Train Single DQN Agent.
+
+    Trains one DQN agent, logs metrics, evaluates periodically, and saves
+    checkpoints.
 
     Args:
-        agent: The DQN agent to train.
-        env: The Gymnasium environment (already wrapped).
-        cfg: Hydra config with training parameters.
-        logger: MetricsLogger for recording metrics.
-        checkpoint_dir: Directory for saving model checkpoints.
+        agent (DQNAgent): DQN agent to train.
+        env (gym.Env): Wrapped training environment.
+        cfg (DictConfig): Training configuration.
+        logger (MetricsLogger): Metrics logger instance.
+        checkpoint_dir (str): Directory for model checkpoints.
 
     Returns:
-        Best evaluation win rate (for Optuna optimization).
+        float: Best evaluation win rate achieved.
     """
     total_episodes = cfg.training.total_episodes
     max_steps = cfg.training.max_steps

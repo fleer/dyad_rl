@@ -5,19 +5,54 @@ from agents.dqn_agent import DQNAgent
 from utils.obs_processing import process_obs
 
 
-def _transition_done(terminated: bool) -> bool:
-    """Only true terminals should be marked done for replay-style transitions."""
-    return terminated
+def _transition_done(
+    terminated: bool,
+    truncated: bool,
+) -> bool:
+    """Check Transition Terminal State.
+
+    Determines whether a transition should be marked terminal for replay
+    storage.
+
+    Args:
+        terminated (bool): Environment termination signal.
+        truncated (bool): Environment truncation signal.
+
+    Returns:
+        bool: ``True`` if transition ends an episode boundary.
+    """
+    return terminated or truncated
 
 def _is_episode_done(
     terminated: bool,
     truncated: bool,
 ) -> bool:
+    """Check Episode Completion.
+
+    Determines whether the current episode should stop.
+
+    Args:
+        terminated (bool): Environment termination signal.
+        truncated (bool): Environment truncation signal.
+
+    Returns:
+        bool: ``True`` when the episode is complete.
+    """
     return terminated or truncated
 
 
 def _sem(values: np.ndarray) -> float:
-    """Return the standard error of the mean for a 1-D array."""
+    """Compute Standard Error.
+
+    Computes the standard error of the mean for a one-dimensional array.
+
+    Args:
+        values (np.ndarray): Input numeric array.
+
+    Returns:
+        float: Standard error of the mean, or ``0.0`` for arrays of size one
+        or less.
+    """
     if len(values) <= 1:
         return 0.0
     return float(values.std(ddof=1) / np.sqrt(len(values)))
@@ -29,16 +64,18 @@ def evaluate(
     n_episodes: int = 1000,
     max_steps: int = 10000
 ) -> dict:
-    """Run evaluation episodes with greedy policy (no exploration).
+    """Evaluate Agent Policy.
+
+    Runs evaluation episodes with a greedy policy (no exploration).
 
     Args:
-        agent: Trained DQN agent.
-        env: The Gymnasium environment.
-        n_episodes: Number of evaluation episodes.
-        max_steps: Max steps per episode to prevent infinite loops.
+        agent (DQNAgent): Trained DQN agent.
+        env (gym.Env): Gymnasium environment.
+        n_episodes (int): Number of evaluation episodes.
+        max_steps (int): Maximum steps per episode.
 
     Returns:
-        Dict with averages and SEMs for return/win-rate/length metrics.
+        dict: Aggregated return, win-rate, length, and uncertainty metrics.
     """
     dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
     returns: list[float] = []
@@ -93,7 +130,18 @@ def evaluate_masked_random(
     n_episodes: int = 100,
     max_steps: int = 10000,
 ) -> dict:
-    """Evaluate a masked-random policy as a regression baseline."""
+    """Evaluate Masked-Random Baseline.
+
+    Evaluates a random policy constrained by action masks.
+
+    Args:
+        env (gym.Env): Gymnasium environment.
+        n_episodes (int): Number of episodes to run.
+        max_steps (int): Maximum steps per episode.
+
+    Returns:
+        dict: Baseline average return, win rate, and episode length.
+    """
     returns: list[float] = []
     lengths: list[int] = []
     successes: list[bool] = []
@@ -128,10 +176,18 @@ def collect_eval_trajectory(
     env: gym.Env,
     max_steps: int = 10000,
 ) -> list[dict]:
-    """Run one evaluation episode and collect full trajectory with both obs types.
+    """Collect Evaluation Trajectory.
 
-    Used by the dyad training loop for experience sharing.
-    The env must use obs_type='dual' so both puzzle_state and pixels are available.
+    Runs one greedy evaluation episode and collects transition dictionaries for
+    dyad experience sharing.
+
+    Args:
+        agent (DQNAgent): Agent used to select actions.
+        env (gym.Env): Environment configured with dual observations.
+        max_steps (int): Maximum steps for the trajectory.
+
+    Returns:
+        list[dict]: Collected transition records for one episode.
     """
     trajectory: list[dict] = []
     obs_raw, info = env.reset(seed=42)
@@ -147,7 +203,7 @@ def collect_eval_trajectory(
         )
 
         episode_done = _is_episode_done(terminated, truncated)
-        transition_done = _transition_done(terminated)
+        transition_done = _transition_done(terminated, truncated)
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)
             if transition_done

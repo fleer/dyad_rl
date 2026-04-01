@@ -6,6 +6,18 @@ class MLPNetwork(nn.Module):
     """Multi-layer perceptron for Q-value estimation from flattened discrete state."""
 
     def __init__(self, input_dim: int, num_actions: int, hidden_sizes: list[int]):
+        """Initialize MLP Network.
+
+        Builds a feed-forward MLP used to predict Q-values for discrete actions.
+
+        Args:
+            input_dim (int): Flattened observation dimension.
+            num_actions (int): Number of discrete actions.
+            hidden_sizes (list[int]): Hidden layer sizes.
+
+        Returns:
+            None: Network modules are initialized in place.
+        """
         super().__init__()
         layers: list[nn.Module] = []
         prev = input_dim
@@ -17,6 +29,16 @@ class MLPNetwork(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run Forward Pass.
+
+        Computes action-value predictions for a batch of inputs.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape ``(batch, input_dim)``.
+
+        Returns:
+            torch.Tensor: Q-value tensor of shape ``(batch, num_actions)``.
+        """
         return self.net(x)
 
 
@@ -34,6 +56,23 @@ class CNNNetwork(nn.Module):
         conv_strides: list[int],
         fc_hidden: int,
     ):
+        """Initialize CNN Network.
+
+        Builds a convolutional Q-network for RGB observations.
+
+        Args:
+            input_channels (int): Number of image channels.
+            input_height (int): Input image height.
+            input_width (int): Input image width.
+            num_actions (int): Number of discrete actions.
+            conv_channels (list[int]): Output channels per convolutional layer.
+            conv_kernels (list[int]): Kernel sizes per convolutional layer.
+            conv_strides (list[int]): Strides per convolutional layer.
+            fc_hidden (int): Hidden size of the first fully connected layer.
+
+        Returns:
+            None: Network modules are initialized in place.
+        """
         super().__init__()
         conv_layers: list[nn.Module] = []
         in_ch = input_channels
@@ -56,5 +95,16 @@ class CNNNetwork(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run Forward Pass.
+
+        Extracts convolutional features and maps them to action values.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape
+                ``(batch, channels, height, width)``.
+
+        Returns:
+            torch.Tensor: Q-value tensor of shape ``(batch, num_actions)``.
+        """
         features = self.conv(x)
         return self.fc(features)

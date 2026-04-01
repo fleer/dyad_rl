@@ -56,6 +56,16 @@ class ReplayBuffer:
     """Fixed-size circular replay buffer storing transitions with both observation types."""
 
     def __init__(self, capacity: int):
+        """Initialize Replay Buffer.
+
+        Creates a fixed-size circular replay buffer.
+
+        Args:
+            capacity (int): Maximum number of stored transitions.
+
+        Returns:
+            None: Buffer state is initialized in place.
+        """
         self.capacity = capacity
         self.buffer: list[Transition] = []
         self.position = 0
@@ -73,6 +83,27 @@ class ReplayBuffer:
         state_rgb: np.ndarray | None = None,
         next_state_rgb: np.ndarray | None = None,
     ) -> None:
+        """Push Transition.
+
+        Stores one transition in the circular replay buffer.
+
+        Args:
+            state (np.ndarray): Current observation.
+            action (int): Action index.
+            reward (float): Immediate reward.
+            next_state (np.ndarray): Next observation.
+            done (bool): Whether transition is terminal.
+            next_action_mask (np.ndarray | None): Valid action mask for next
+                state.
+            state_discrete (np.ndarray | None): Optional discrete-state branch.
+            next_state_discrete (np.ndarray | None): Optional next
+                discrete-state branch.
+            state_rgb (np.ndarray | None): Optional RGB-state branch.
+            next_state_rgb (np.ndarray | None): Optional next RGB-state branch.
+
+        Returns:
+            None: Transition is inserted into storage.
+        """
         transition = Transition(
             state,
             action,
@@ -92,6 +123,16 @@ class ReplayBuffer:
         self.position = (self.position + 1) % self.capacity
 
     def extend(self, transitions: list[Transition]) -> None:
+        """Extend Replay Buffer.
+
+        Appends multiple transitions into the circular buffer.
+
+        Args:
+            transitions (list[Transition]): Transitions to insert.
+
+        Returns:
+            None: Transitions are inserted into storage.
+        """
         for t in transitions:
             if len(self.buffer) < self.capacity:
                 self.buffer.append(t)
@@ -100,6 +141,18 @@ class ReplayBuffer:
             self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size: int, device: torch.device) -> dict[str, torch.Tensor]:
+        """Sample Transition Batch.
+
+        Samples a random minibatch and converts fields to tensors.
+
+        Args:
+            batch_size (int): Number of transitions to sample.
+            device (torch.device): Target device for tensor outputs.
+
+        Returns:
+            dict[str, torch.Tensor]: Tensor batch containing state, action,
+            reward, next-state, done, and optional next-action masks.
+        """
         batch = random.sample(self.buffer, batch_size)
 
         states = torch.as_tensor(
@@ -148,6 +201,16 @@ class ReplayBuffer:
         }
 
     def __len__(self) -> int:
+        """Get Buffer Length.
+
+        Returns the number of transitions currently stored.
+
+        Args:
+            None: This method reads internal buffer state.
+
+        Returns:
+            int: Number of stored transitions.
+        """
         return len(self.buffer)
 
 
@@ -170,18 +233,24 @@ class HERReplayBuffer:
         n_sampled_goal: int = 4,
         goal_selection_strategy: str = "future",
     ):
-        """Initialize HER replay buffer.
+        """Initialize HER Replay Buffer.
+
+        Creates a HER-enabled replay buffer with configurable goal relabeling.
 
         Args:
-            capacity: Maximum number of episodes to store
-            reward_fn: Function that computes reward given (achieved_goal, goal).
-                      Should return float (typically 0.0 for success, -1.0 for failure)
-            n_sampled_goal: Number of virtual transitions to create per real transition
-                           by sampling new hindsight goals. HER ratio = 1 - 1/(n_sampled_goal + 1)
-            goal_selection_strategy: Strategy for selecting hindsight goals.
+            capacity (int): Maximum number of transitions to store.
+            reward_fn (Callable[[np.ndarray, np.ndarray], float]): Reward
+                function over achieved and target goals.
+            n_sampled_goal (int): Number of hindsight goals sampled per real
+                transition.
+            goal_selection_strategy (str): Strategy for selecting hindsight
+                goals.
                 - "future": sample goals from states after current step in episode (default)
                 - "final": always use final achieved state as goal
                 - "episode": sample uniformly from all achieved states in episode
+
+        Returns:
+            None: Buffer state is initialized in place.
         """
         self.capacity = capacity
         self.reward_fn = reward_fn
@@ -202,7 +271,16 @@ class HERReplayBuffer:
         self._current_episode: list[Transition] = []
 
     def _append_transition(self, transition: Transition) -> None:
-        """Append a transition to the circular transition buffer."""
+        """Append Transition Internally.
+
+        Inserts one transition into circular storage.
+
+        Args:
+            transition (Transition): Transition to append.
+
+        Returns:
+            None: Transition is inserted into storage.
+        """
         if len(self.buffer) < self.capacity:
             self.buffer.append(transition)
         else:
@@ -210,9 +288,16 @@ class HERReplayBuffer:
         self.position = (self.position + 1) % self.capacity
 
     def _goal_from_transition(self, transition: Transition) -> np.ndarray:
-        """Extract an achieved-goal representation from a transition.
+        """Extract Achieved Goal.
 
-        Preference order: discrete next obs, RGB next obs, generic next obs.
+        Extracts an achieved-goal representation from a transition using
+        discrete, RGB, or generic next-state preference order.
+
+        Args:
+            transition (Transition): Transition containing next-state fields.
+
+        Returns:
+            np.ndarray: Achieved-goal representation.
         """
         if transition.next_state_discrete is not None:
             return np.asarray(transition.next_state_discrete)
@@ -225,7 +310,17 @@ class HERReplayBuffer:
         achieved_goals: list[np.ndarray],
         step_idx: int,
     ) -> np.ndarray:
-        """Sample a hindsight goal according to the configured strategy."""
+        """Sample Hindsight Goal.
+
+        Samples one hindsight goal according to the configured strategy.
+
+        Args:
+            achieved_goals (list[np.ndarray]): Achieved goals in an episode.
+            step_idx (int): Current transition index.
+
+        Returns:
+            np.ndarray: Selected hindsight goal.
+        """
         if self.goal_selection_strategy == "final":
             return achieved_goals[-1]
         if self.goal_selection_strategy == "episode":
@@ -234,7 +329,16 @@ class HERReplayBuffer:
         return achieved_goals[np.random.randint(step_idx, len(achieved_goals))]
 
     def _augment_current_episode(self) -> None:
-        """Create HER virtual transitions for the currently collected episode."""
+        """Augment Episode With HER.
+
+        Generates HER virtual transitions from the currently buffered episode.
+
+        Args:
+            None: This method uses internal episode state.
+
+        Returns:
+            None: Virtual transitions are appended to storage.
+        """
         if not self._current_episode:
             return
 
@@ -272,7 +376,28 @@ class HERReplayBuffer:
         state_rgb: np.ndarray | None = None,
         next_state_rgb: np.ndarray | None = None,
     ) -> None:
-        """Push one transition and add HER virtual transitions when an episode ends."""
+        """Push HER Transition.
+
+        Stores one transition and, at episode end, augments with HER relabeled
+        transitions.
+
+        Args:
+            state (np.ndarray): Current observation.
+            action (int): Action index.
+            reward (float): Immediate reward.
+            next_state (np.ndarray): Next observation.
+            done (bool): Whether transition is terminal.
+            next_action_mask (np.ndarray | None): Valid action mask for next
+                state.
+            state_discrete (np.ndarray | None): Optional discrete-state branch.
+            next_state_discrete (np.ndarray | None): Optional next
+                discrete-state branch.
+            state_rgb (np.ndarray | None): Optional RGB-state branch.
+            next_state_rgb (np.ndarray | None): Optional next RGB-state branch.
+
+        Returns:
+            None: Transition and optional HER augmentations are stored.
+        """
         transition = Transition(
             state=state,
             action=action,
@@ -293,7 +418,16 @@ class HERReplayBuffer:
             self._current_episode.clear()
 
     def extend(self, transitions: list[Transition]) -> None:
-        """Extend with pre-built transitions using the same HER episode logic."""
+        """Extend HER Buffer.
+
+        Inserts pre-built transitions while preserving HER episode handling.
+
+        Args:
+            transitions (list[Transition]): Transitions to insert.
+
+        Returns:
+            None: Transitions are inserted into storage.
+        """
         for t in transitions:
             self.push(
                 state=t.state,
@@ -317,15 +451,21 @@ class HERReplayBuffer:
         states_discrete: list[np.ndarray] | None = None,
         states_rgb: list[np.ndarray] | None = None,
     ) -> None:
-        """Store an entire episode.
+        """Push Full Episode.
+
+        Stores a full episode by converting sequential states to transitions.
 
         Args:
-            states: List of observations at each step
-            actions: List of actions at each step
-            goals: List of goals at each step (original goals from environment)
-            achieved_goals: List of achieved states at each step
-            states_discrete: Optional list of discrete observations
-            states_rgb: Optional list of RGB observations
+            states (list[np.ndarray]): Observations at each step.
+            actions (list[int]): Actions at each step.
+            goals (list[np.ndarray]): Original goals at each step.
+            achieved_goals (list[np.ndarray]): Achieved goals at each step.
+            states_discrete (list[np.ndarray] | None): Optional discrete
+                observations.
+            states_rgb (list[np.ndarray] | None): Optional RGB observations.
+
+        Returns:
+            None: Episode transitions are stored via ``push``.
         """
         if not states:
             return
@@ -359,14 +499,16 @@ class HERReplayBuffer:
             )
 
     def _select_hindsight_goal(self, episode: Episode, current_step: int) -> np.ndarray:
-        """Select a hindsight goal from achieved states in the episode.
+        """Select Hindsight Goal.
+
+        Selects a hindsight goal from achieved states in an episode.
 
         Args:
-            episode: The episode to sample from
-            current_step: Current step index in the episode
+            episode (Episode): Episode data source.
+            current_step (int): Current step index.
 
         Returns:
-            A hindsight goal (achieved state)
+            np.ndarray: Selected hindsight goal.
         """
         ep_len = len(episode.achieved_goals)
 
@@ -390,23 +532,17 @@ class HERReplayBuffer:
         batch_size: int,
         device: torch.device,
     ) -> dict[str, torch.Tensor]:
-        """Sample a batch of transitions with HER relabeling.
+        """Sample HER Batch.
 
-        Produces a batch with a mix of:
-        - Real transitions (with original goals)
-        - Virtual transitions (with hindsight-relabeled goals)
-
-        The ratio is controlled by n_sampled_goal: for each real transition,
-        n_sampled_goal virtual transitions are generated.
+        Samples a minibatch from storage and converts fields to tensors.
 
         Args:
-            batch_size: Number of real transitions to sample
-            device: Torch device to place tensors on
+            batch_size (int): Number of transitions to sample.
+            device (torch.device): Target device for tensors.
 
         Returns:
-            Dictionary of batched transition tensors. Total batch size will be
-            batch_size * (1 + n_sampled_goal) / (1 + n_sampled_goal), but we
-            return batch_size real + virtual transitions combined.
+            dict[str, torch.Tensor]: Tensor batch with transition fields and
+            optional modality branches.
         """
         if not self.buffer:
             raise RuntimeError("Cannot sample from empty buffer")
@@ -478,14 +614,17 @@ class HERReplayBuffer:
     def _sample_transitions(
         self, batch_size: int, use_hindsight: bool
     ) -> dict[str, np.ndarray | list]:
-        """Internal method to sample a batch of transitions.
+        """Sample Transition Arrays.
+
+        Internal helper that samples transitions and returns numpy-backed fields.
 
         Args:
-            batch_size: Number of transitions to sample
-            use_hindsight: If True, replace goals with hindsight-sampled goals
+            batch_size (int): Number of transitions to sample.
+            use_hindsight (bool): Placeholder flag for hindsight relabeling
+                behavior.
 
         Returns:
-            Dictionary of numpy arrays (before tensor conversion)
+            dict[str, np.ndarray | list]: Sampled transition fields.
         """
         batch_states = []
         batch_actions = []
@@ -522,13 +661,15 @@ class HERReplayBuffer:
         }
 
     def sample_transitions(self, batch_size: int) -> list[HERTransition]:
-        """Sample a batch of transitions as HERTransition namedtuples.
+        """Sample HER Transition Objects.
+
+        Samples transitions and packages them as ``HERTransition`` objects.
 
         Args:
-            batch_size: Number of transitions to sample
+            batch_size (int): Number of transitions to sample.
 
         Returns:
-            List of HERTransition objects with mixed real and virtual transitions
+            list[HERTransition]: Sampled transition objects.
         """
         if not self.buffer:
             raise RuntimeError("Cannot sample from empty buffer")
@@ -555,13 +696,16 @@ class HERReplayBuffer:
         return transitions
 
     def _sample_single_transition(self, use_hindsight: bool) -> HERTransition:
-        """Sample a single transition.
+        """Sample Single Transition.
+
+        Samples one transition and packages it as ``HERTransition``.
 
         Args:
-            use_hindsight: Whether to use hindsight goal relabeling
+            use_hindsight (bool): Placeholder flag for hindsight relabeling
+                behavior.
 
         Returns:
-            A single HERTransition
+            HERTransition: Sampled transition object.
         """
         transition = random.choice(self.buffer)
         return HERTransition(
@@ -580,5 +724,14 @@ class HERReplayBuffer:
         )
 
     def __len__(self) -> int:
-        """Return number of transitions in buffer."""
+        """Get Buffer Length.
+
+        Returns the number of transitions currently stored.
+
+        Args:
+            None: This method reads internal buffer state.
+
+        Returns:
+            int: Number of stored transitions.
+        """
         return len(self.buffer)

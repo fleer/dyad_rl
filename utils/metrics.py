@@ -47,6 +47,17 @@ class MetricsLogger:
     """Tracks training and evaluation metrics, writes CSV and JSON outputs."""
 
     def __init__(self, log_dir: str, agent_name: str = "agent"):
+        """Initialize Metrics Logger.
+
+        Initializes in-memory metric stores and ensures output directory exists.
+
+        Args:
+            log_dir (str): Directory for persisted metric files.
+            agent_name (str): Prefix used for output file names.
+
+        Returns:
+            None: Logger state is initialized in place.
+        """
         self.log_dir = log_dir
         self.agent_name = agent_name
         self.episodes: list[EpisodeRecord] = []
@@ -68,6 +79,31 @@ class MetricsLogger:
         td_abs_pos: float = 0.0,
         td_abs_neg: float = 0.0,
     ) -> None:
+        """Log Training Episode.
+
+        Appends a per-episode training metric record.
+
+        Args:
+            episode (int): Episode index.
+            total_return (float): Episode return.
+            length (int): Episode length in steps.
+            success (bool): Whether the episode solved the task.
+            epsilon (float): Exploration value for the episode.
+            loss (float): Average optimization loss.
+            non_zero_reward_frac (float): Fraction of non-zero rewards in update
+                batches.
+            terminal_frac (float): Fraction of terminal transitions in update
+                batches.
+            td_abs_zero (float): Mean absolute TD error for zero-reward
+                transitions.
+            td_abs_pos (float): Mean absolute TD error for positive-reward
+                transitions.
+            td_abs_neg (float): Mean absolute TD error for negative-reward
+                transitions.
+
+        Returns:
+            None: Record is appended to internal storage.
+        """
         self.episodes.append(
             EpisodeRecord(
                 episode=episode,
@@ -85,6 +121,16 @@ class MetricsLogger:
         )
 
     def log_eval(self, record: EvalRecord) -> None:
+        """Log Evaluation Record.
+
+        Appends one evaluation summary record.
+
+        Args:
+            record (EvalRecord): Evaluation metrics record.
+
+        Returns:
+            None: Record is appended to internal storage.
+        """
         self.evals.append(record)
 
     def log_baseline(
@@ -94,6 +140,19 @@ class MetricsLogger:
         n_episodes: int,
         max_steps: int,
     ) -> None:
+        """Log Baseline Metrics.
+
+        Stores baseline evaluation metrics for later persistence.
+
+        Args:
+            name (str): Baseline name.
+            result (dict): Baseline metric dictionary.
+            n_episodes (int): Number of baseline episodes.
+            max_steps (int): Maximum steps per episode during baseline run.
+
+        Returns:
+            None: Baseline record is appended to internal storage.
+        """
         self.baselines.append(
             BaselineRecord(
                 name=name,
@@ -106,6 +165,17 @@ class MetricsLogger:
         )
 
     def save_csv(self, path: str | None = None) -> None:
+        """Save Training CSV.
+
+        Persists logged training episodes as a CSV file.
+
+        Args:
+            path (str | None): Optional output path. Default path is derived
+                from logger settings.
+
+        Returns:
+            None: File is written when episode records exist.
+        """
         path = path or os.path.join(self.log_dir, f"{self.agent_name}_training.csv")
         if not self.episodes:
             return
@@ -116,16 +186,48 @@ class MetricsLogger:
                 writer.writerow(asdict(ep))
 
     def save_eval_json(self, path: str | None = None) -> None:
+        """Save Evaluation JSON.
+
+        Persists evaluation records as JSON.
+
+        Args:
+            path (str | None): Optional output path. Default path is derived
+                from logger settings.
+
+        Returns:
+            None: File is written to disk.
+        """
         path = path or os.path.join(self.log_dir, f"{self.agent_name}_eval.json")
         with open(path, "w") as f:
             json.dump([asdict(e) for e in self.evals], f, indent=2)
 
     def save_baseline_json(self, path: str | None = None) -> None:
+        """Save Baseline JSON.
+
+        Persists baseline records as JSON.
+
+        Args:
+            path (str | None): Optional output path. Default path is derived
+                from logger settings.
+
+        Returns:
+            None: File is written to disk.
+        """
         path = path or os.path.join(self.log_dir, f"{self.agent_name}_baselines.json")
         with open(path, "w") as f:
             json.dump([asdict(b) for b in self.baselines], f, indent=2)
 
     def get_recent_stats(self, window: int = 100) -> dict:
+        """Compute Recent Aggregate Stats.
+
+        Computes moving-window averages over recent episode records.
+
+        Args:
+            window (int): Number of recent episodes to aggregate.
+
+        Returns:
+            dict: Aggregated metric dictionary for recent episodes.
+        """
         recent = self.episodes[-window:]
         if not recent:
             return {}

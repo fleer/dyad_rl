@@ -36,7 +36,6 @@ from omegaconf import DictConfig, OmegaConf
 import rlp  # noqa: F401 — registers rlp/Puzzle-v0
 from agents.dqn_agent import DQNAgent
 from utils.obs_processing import (
-    NormalizeDualPuzzleStateWrapper,
     NormalizePuzzleStateWrapper,
     process_obs,
 )
@@ -48,35 +47,57 @@ class ActionMaskWrapper(gym.Wrapper):
     """Ensures action_masks() is accessible through wrapper chain."""
 
     def action_masks(self) -> np.ndarray:
+        """Get Action Mask.
+
+        Forwards action-mask retrieval to the unwrapped base environment.
+
+        Args:
+            None: This method reads wrapped environment state.
+
+        Returns:
+            np.ndarray: Boolean mask of valid actions.
+        """
         return self.env.unwrapped.action_masks()
 
 
 def find_experiment_config(checkpoint_name: str) -> str | None:
-    """Find the most recent .hydra/config.yaml for a given experiment.
+    """Find Experiment Config.
 
-    checkpoint_name: e.g., "exp1_mlp_2x3" — we'll search outputs/ for matching config.
+    Searches Hydra output directories for a config matching the checkpoint
+    experiment name.
+
+    Args:
+        checkpoint_name (str): Experiment name inferred from checkpoint path.
+
+    Returns:
+        str | None: Matching config path, or ``None`` if not found.
     """
     outputs_dir = "outputs"
     if not os.path.exists(outputs_dir):
         return None
 
     # Recursively search for .hydra/config.yaml files
-    for root, dirs, files in os.walk(outputs_dir):
+    for root, _, _ in os.walk(outputs_dir):
         if ".hydra" in root and "config.yaml" in os.listdir(root):
             config_path = os.path.join(root, "config.yaml")
-            with open(config_path) as f:
-                cfg = OmegaConf.load(config_path)
-                if cfg.get("experiment_name", "").lower() == checkpoint_name.lower():
-                    return config_path
+            cfg = OmegaConf.load(config_path)
+            if cfg.get("experiment_name", "").lower() == checkpoint_name.lower():
+                return config_path
 
     return None
 
 
 def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
-    """Load or infer experiment config based on checkpoint path.
+    """Load Checkpoint Config.
 
-    Tries to find the matching .hydra/config.yaml from outputs/ directory.
-    Falls back to default config if not found.
+    Loads the matching Hydra config for a checkpoint, or infers a fallback
+    config when no saved config is available.
+
+    Args:
+        checkpoint_path (str): Path to checkpoint file.
+
+    Returns:
+        DictConfig: Loaded or inferred configuration.
     """
     # Extract experiment name from checkpoint path
     # e.g., "checkpoints/exp1_mlp_2x3/best_model.pt" -> "exp1_mlp_2x3"
@@ -125,12 +146,18 @@ def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
 
 
 def create_env_for_visualization(cfg: DictConfig) -> gym.Env:
-    """Create environment with rgb_array render mode.
-    
-    Note: render_mode="human" can cause segfaults with the C pygame backend,
-    so we use rgb_array which is more stable.
+    """Create Visualization Environment.
+
+    Creates a visualization-safe environment using ``rgb_array`` rendering and
+    applies required wrappers.
+
+    Args:
+        cfg (DictConfig): Environment configuration.
+
+    Returns:
+        gym.Env: Wrapped environment for episode visualization.
     """
-    log.info(f"Creating environment in rgb_array mode (recommended for stability)")
+    log.info("Creating environment in rgb_array mode (recommended for stability)")
 
     env = gym.make(
         "rlp/Puzzle-v0",
@@ -156,7 +183,16 @@ def create_env_for_visualization(cfg: DictConfig) -> gym.Env:
 
 
 def get_obs_shape_for_agent(cfg: DictConfig) -> tuple[int, ...]:
-    """Determine observation shape based on agent type and config."""
+    """Get Agent Observation Shape.
+
+    Determines observation tensor shape expected by the configured agent.
+
+    Args:
+        cfg (DictConfig): Experiment configuration.
+
+    Returns:
+        tuple[int, ...]: Observation shape for agent construction.
+    """
     if cfg.agent.type == "cnn":
         return (3, cfg.env.window_width, cfg.env.window_height)
     else:  # mlp or puzzle_state
@@ -198,8 +234,20 @@ def load_agent(
     device: torch.device,
     num_actions: int | None = None,
 ) -> DQNAgent:
-    """Load a DQN agent from checkpoint."""
-    log.info(f"Building agent with config...")
+    """Load Agent From Checkpoint.
+
+    Builds a DQN agent from config and restores model state from checkpoint.
+
+    Args:
+        checkpoint_path (str): Path to checkpoint file.
+        cfg (DictConfig): Experiment configuration.
+        device (torch.device): Torch device for model tensors.
+        num_actions (int | None): Optional action count override.
+
+    Returns:
+        DQNAgent: Restored agent in evaluation mode.
+    """
+    log.info("Building agent with config...")
     log.info(f"  Agent type: {cfg.agent.type}")
     log.info(f"  Obs type: {cfg.env.obs_type}")
     
@@ -216,7 +264,7 @@ def load_agent(
     total_steps = cfg.training.total_episodes * cfg.training.max_steps
     log.info(f"  Total steps for schedules: {total_steps}")
 
-    log.info(f"Initializing agent...")
+    log.info("Initializing agent...")
     agent = DQNAgent(
         obs_type=cfg.env.obs_type,
         obs_shape=obs_shape,
@@ -226,7 +274,7 @@ def load_agent(
         total_steps=total_steps,
     )
     
-    log.info(f"Agent initialized. Loading checkpoint...")
+    log.info("Agent initialized. Loading checkpoint...")
     log.info(f"  Checkpoint path: {checkpoint_path}")
     log.info(f"  File exists: {os.path.exists(checkpoint_path)}")
     log.info(f"  File size: {os.path.getsize(checkpoint_path) if os.path.exists(checkpoint_path) else 'N/A'} bytes")
@@ -234,7 +282,7 @@ def load_agent(
     # Load the checkpoint
     try:
         agent.load(checkpoint_path)
-        log.info(f"Checkpoint loaded successfully")
+        log.info("Checkpoint loaded successfully")
     except RuntimeError as e:
         log.error(f"Failed to load checkpoint: {e}")
         # Try to infer num_actions from checkpoint
@@ -262,13 +310,13 @@ def load_agent(
                 total_steps=total_steps,
             )
             agent.load(checkpoint_path)
-            log.info(f"Checkpoint loaded successfully after auto-detection")
+            log.info("Checkpoint loaded successfully after auto-detection")
         except Exception as e2:
             log.error(f"Still failed: {e2}")
             raise
 
     agent.policy_net.eval()  # Set to eval mode
-    log.info(f"Agent set to eval mode")
+    log.info("Agent set to eval mode")
 
     return agent
 
@@ -281,12 +329,21 @@ def visualize_episode(
     save_frames: bool = False,
     output_dir: str = "episode_frames",
 ) -> dict:
-    """Run one episode with the trained agent and visualize it.
-    
-    Optionally saves frames to disk for creating a video later.
+    """Visualize Single Episode.
+
+    Runs one greedy episode with a trained agent and optionally saves rendered
+    frames.
+
+    Args:
+        agent (DQNAgent): Trained agent used for action selection.
+        env (gym.Env): Visualization environment.
+        cfg (DictConfig): Experiment configuration.
+        max_steps (int): Maximum steps to run.
+        save_frames (bool): Whether to save rendered frames.
+        output_dir (str): Directory where frames are saved.
 
     Returns:
-        Dictionary with episode stats (reward, length, success).
+        dict: Episode statistics including total return, steps, and success.
     """
     dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
     
@@ -345,7 +402,7 @@ def visualize_episode(
 
     success = total_return > 0
 
-    log.info(f"Episode finished!")
+    log.info("Episode finished!")
     log.info(f"  Total return: {total_return}")
     log.info(f"  Steps: {step_count}")
     log.info(f"  Success: {success}")
@@ -364,15 +421,17 @@ def create_mp4_from_frames(
     output_path: str = "episode.mp4",
     framerate: int = 10,
 ) -> bool:
-    """Create an MP4 video from PNG frames using ffmpeg.
-    
+    """Create MP4 From Frames.
+
+    Encodes sequential PNG frames into an MP4 using ``ffmpeg``.
+
     Args:
-        frames_dir: Directory containing frame_0000.png, frame_0001.png, etc.
-        output_path: Output video filename (default: episode.mp4)
-        framerate: Output video framerate in fps (default: 10)
-    
+        frames_dir (str): Directory containing frame PNG files.
+        output_path (str): Output MP4 path.
+        framerate (int): Output frame rate.
+
     Returns:
-        True if successful, False otherwise.
+        bool: ``True`` on successful video creation, else ``False``.
     """
     import shutil
     
@@ -428,6 +487,17 @@ def create_mp4_from_frames(
 
 
 def main():
+    """Run Visualization CLI.
+
+    Parses CLI arguments, loads config and checkpoint, visualizes one episode,
+    and optionally exports an MP4.
+
+    Args:
+        None: This function reads arguments from the command line.
+
+    Returns:
+        None: Results are logged and optional artifacts are written to disk.
+    """
     parser = argparse.ArgumentParser(
         description="Visualize a trained RL agent solving a puzzle."
     )

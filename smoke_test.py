@@ -24,6 +24,16 @@ from utils.env_factory import make_env, make_dual_obs_env
 
 
 def test_networks():
+    """Test Network Forward Passes.
+
+    Validates output shapes for MLP and CNN network forward passes.
+
+    Args:
+        None: This function uses local test fixtures.
+
+    Returns:
+        None: Assertions fail on shape mismatch.
+    """
     print("=== Testing Networks ===")
     mlp = MLPNetwork(input_dim=20, num_actions=5, hidden_sizes=[128, 128])
     x = torch.randn(4, 20)
@@ -39,6 +49,16 @@ def test_networks():
 
 
 def test_replay_buffer():
+    """Test Replay Buffer Sampling.
+
+    Validates replay buffer insertion count and sampled tensor shapes.
+
+    Args:
+        None: This function uses local random test data.
+
+    Returns:
+        None: Assertions fail on unexpected behavior.
+    """
     print("=== Testing Replay Buffer ===")
     buf = ReplayBuffer(capacity=1000)
     for i in range(500):
@@ -58,6 +78,16 @@ def test_replay_buffer():
 
 
 def _make_cfg(obs_type="puzzle_state"):
+    """Build Smoke-Test Config.
+
+    Creates a minimal OmegaConf configuration for smoke tests.
+
+    Args:
+        obs_type (str): Observation type for the test environment.
+
+    Returns:
+        DictConfig: Generated smoke-test configuration.
+    """
     return OmegaConf.create({
         "env": {
             "puzzle": "netslide",
@@ -99,7 +129,17 @@ def _make_cfg(obs_type="puzzle_state"):
 
 
 def test_env_and_agent():
-    """Test environment, dual obs, and agent in a single env lifecycle."""
+    """Test Environment And Agent Lifecycle.
+
+    Exercises environment stepping, agent interaction, optimization, and
+    checkpoint save/load in one lifecycle.
+
+    Args:
+        None: This function uses generated config and local fixtures.
+
+    Returns:
+        None: Assertions fail on unexpected behavior.
+    """
     print("=== Testing Environment ===")
     cfg = _make_cfg()
     env = make_env(cfg)
@@ -170,7 +210,16 @@ def test_env_and_agent():
 
 
 def test_dual_obs_standalone():
-    """Test dual obs_type environment in its own env lifecycle."""
+    """Test Dual Observation Environment.
+
+    Validates dual observation structure, types, and one step transition.
+
+    Args:
+        None: This function uses generated config and local fixtures.
+
+    Returns:
+        None: Assertions fail on unexpected behavior.
+    """
     print("=== Testing Dual Obs Environment ===")
     cfg = _make_cfg()
     env = make_dual_obs_env(cfg)
@@ -194,6 +243,16 @@ def test_dual_obs_standalone():
 
 
 def test_masked_random_baseline():
+    """Test Masked-Random Baseline.
+
+    Runs a short masked-random baseline evaluation and validates metric ranges.
+
+    Args:
+        None: This function uses generated config and local fixtures.
+
+    Returns:
+        None: Assertions fail on unexpected behavior.
+    """
     print("=== Testing Masked Random Baseline ===")
     cfg = _make_cfg()
     env = make_env(cfg)

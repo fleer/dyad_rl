@@ -14,13 +14,30 @@ class ActionMaskWrapper(gym.Wrapper):
     """Ensures action_masks() is accessible through any wrapper chain."""
 
     def action_masks(self) -> np.ndarray:
+        """Get Action Mask.
+
+        Forwards action-mask retrieval to the unwrapped base environment.
+
+        Args:
+            None: This method reads wrapped environment state.
+
+        Returns:
+            np.ndarray: Boolean mask indicating valid actions.
+        """
         return self.env.unwrapped.action_masks()
 
 
 def make_env(cfg: DictConfig) -> gym.Env:
-    """Create a PuzzleEnv from Hydra config.
+    """Create Environment.
 
-    For puzzle_state obs_type, wraps with FlattenObservation to produce a 1-D vector.
+    Builds a puzzle environment from config with wrappers appropriate for the
+    selected observation type.
+
+    Args:
+        cfg (DictConfig): Environment and wrapper configuration.
+
+    Returns:
+        gym.Env: Wrapped Gymnasium environment.
     """
     env = gym.make(
         "rlp/Puzzle-v0",
@@ -42,9 +59,16 @@ def make_env(cfg: DictConfig) -> gym.Env:
 
 
 def make_dual_obs_env(cfg: DictConfig) -> gym.Env:
-    """Create a PuzzleEnv with obs_type='dual'.
+    """Create Dual-Observation Environment.
 
-    Returns both puzzle_state (flattened) and RGB observations in every step.
+    Builds a puzzle environment that returns both normalized puzzle-state and
+    RGB observations at each step.
+
+    Args:
+        cfg (DictConfig): Environment and wrapper configuration.
+
+    Returns:
+        gym.Env: Wrapped dual-observation environment.
     """
     env = gym.make(
         "rlp/Puzzle-v0",

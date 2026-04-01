@@ -20,11 +20,31 @@ from evaluation.analyze import (
 
 
 def _existing(paths: Dict[str, str]) -> Dict[str, str]:
-    """Filter mapping to files that exist."""
+    """Filter Existing Paths.
+
+    Filters an experiment-to-path mapping to only existing files.
+
+    Args:
+        paths (Dict[str, str]): Mapping from label to filesystem path.
+
+    Returns:
+        Dict[str, str]: Mapping containing only existing file paths.
+    """
     return {name: path for name, path in paths.items() if os.path.exists(path)}
 
 
 def main() -> None:
+    """Generate Result Plots.
+
+    Generates and saves training and evaluation comparison plots for 2x3 and 3x3
+    experiments when the required result files are available.
+
+    Args:
+        None: This function reads predefined result paths.
+
+    Returns:
+        None: Plots are saved to the visualizations directories.
+    """
     training_csvs_2x3 = {
         "Exp1 MLP": "results/exp1_mlp_2x3/exp1_mlp_2x3_training.csv",
         "Exp2 CNN": "results/exp2_cnn_2x3/exp2_cnn_2x3_training.csv",

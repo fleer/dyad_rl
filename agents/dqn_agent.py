@@ -11,10 +11,21 @@ from utils.replay_buffer import ReplayBuffer, HERReplayBuffer, Transition
 
 
 def polyak_update(params, target_params, tau: float) -> None:
-    """In-place Polyak averaging: target = (1-tau)*target + tau*params.
+    """Update Target Parameters.
 
-    Mirrors stable-baselines3 common/utils.py::polyak_update.
-    With tau=1.0 this is a full hard copy; with tau<1.0 it is a soft update.
+    Performs in-place Polyak averaging for target parameters using
+    ``target = (1 - tau) * target + tau * params``.
+
+    Args:
+        params (Iterator[torch.nn.Parameter]): Source parameters, usually from
+            the policy network.
+        target_params (Iterator[torch.nn.Parameter]): Target parameters to be
+            updated.
+        tau (float): Interpolation factor in ``[0, 1]``. ``1.0`` performs a
+            hard copy.
+
+    Returns:
+        None: This function updates parameters in place.
     """
     with torch.no_grad():
         for param, target_param in zip(params, target_params):
@@ -34,6 +45,28 @@ class DQNAgent:
         device: torch.device | None = None,
         total_steps: int = 0,
     ):
+        """Initialize DQN Agent.
+
+        Initializes network architecture, replay buffer, optimizer, and
+        exploration schedule for a DQN agent.
+
+        Args:
+            obs_type (str): Observation modality name (for example, ``"mlp"``
+                or ``"cnn"``-compatible processing paths).
+            obs_shape (tuple[int, ...]): Shape of the processed observation
+                expected by the policy network.
+            num_actions (int): Number of discrete actions.
+            cfg (DictConfig): Root Hydra configuration.
+            agent_cfg (DictConfig | None): Optional agent-specific override
+                configuration. If ``None``, ``cfg.agent`` is used.
+            device (torch.device | None): Torch device for tensors and models.
+                Defaults to CPU when ``None``.
+            total_steps (int): Total planned training steps used to compute the
+                epsilon linear decay horizon.
+
+        Returns:
+            None: The constructor initializes the instance in place.
+        """
         self.obs_type = obs_type
         self.obs_shape = obs_shape
         self.num_actions = num_actions
@@ -117,6 +150,20 @@ class DQNAgent:
             goal_tolerance = float(getattr(a_cfg, "her_goal_tolerance", 1e-6))
 
             def _reward_fn(achieved_goal: np.ndarray, goal: np.ndarray) -> float:
+                """Compute HER Sparse Reward.
+
+                Computes a sparse binary reward for hindsight relabeling based
+                on whether the achieved goal matches the relabeled goal.
+
+                Args:
+                    achieved_goal (np.ndarray): Goal state reached by the
+                        transition.
+                    goal (np.ndarray): Relabeled target goal state.
+
+                Returns:
+                    float: ``0.0`` when goals match within tolerance, otherwise
+                    ``-1.0``.
+                """
                 # Sparse binary reward used by HER relabeling.
                 return (
                     0.0
@@ -149,7 +196,22 @@ class DQNAgent:
         action_mask: np.ndarray | None = None,
         explore: bool = True,
     ) -> int:
-        """Epsilon-greedy action selection with optional action masking."""
+        """Select Action.
+
+        Selects an action using epsilon-greedy exploration with optional action
+        masking for invalid actions.
+
+        Args:
+            state (np.ndarray): Current observation in the agent-specific
+                format.
+            action_mask (np.ndarray | None): Boolean mask of valid actions.
+                ``True`` indicates valid actions. If ``None``, all actions are
+                considered valid.
+            explore (bool): Whether to apply epsilon-greedy exploration.
+
+        Returns:
+            int: Selected discrete action index.
+        """
         # Linear decay: mirrors SB3 LinearSchedule
         progress = min(1.0, self.steps_done / self._exploration_steps)
         eps = self.exploration_initial_eps + progress * (
@@ -180,6 +242,18 @@ class DQNAgent:
             return int(q_values.argmax(dim=1).item())
 
     def optimize(self) -> float:
+        """Optimize Policy Network.
+
+        Samples a minibatch from replay memory and performs one DQN gradient
+        update step using the Huber loss.
+
+        Args:
+            None: This method uses internal agent state and replay buffer.
+
+        Returns:
+            float: Scalar loss value for the update step, or ``0.0`` when there
+            are not enough samples to train.
+        """
         if len(self.replay_buffer) < self.batch_size:
             self.last_optimize_stats = {
                 "loss": 0.0,
@@ -244,6 +318,18 @@ class DQNAgent:
         neg_mask = rewards < 0
 
         def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> float:
+            """Compute Masked Mean.
+
+            Computes the mean of values where the boolean mask is true.
+
+            Args:
+                values (torch.Tensor): Tensor containing values to aggregate.
+                mask (torch.Tensor): Boolean tensor selecting valid entries.
+
+            Returns:
+                float: Mean over selected entries, or ``0.0`` if no entries are
+                selected.
+            """
             if mask.any():
                 return float(values[mask].mean().item())
             return 0.0
@@ -267,11 +353,16 @@ class DQNAgent:
         return loss.item()
 
     def update_target_net(self) -> None:
-        """Periodic Polyak update of the target network.
+        """Update Target Network.
 
-        Called every step but only applies the update every target_update_interval calls.
-        With tau=1.0 (default) this is a hard copy — identical to SB3's default behaviour.
-        θ′ ← τ θ + (1 − τ) θ′
+        Updates the target network parameters on the configured interval using
+        Polyak averaging.
+
+        Args:
+            None: This method uses internal counters and network parameters.
+
+        Returns:
+            None: The target network is updated in place when due.
         """
         self._n_calls += 1
         if self._n_calls % self.target_update_interval != 0:
@@ -281,17 +372,35 @@ class DQNAgent:
     # --- Dyad support methods ---
 
     def compute_q_values(self, states: np.ndarray) -> torch.Tensor:
-        """Compute Q-values for a batch of states using the policy network."""
+        """Compute Q Values.
+
+        Runs a forward pass of the policy network to compute Q-values for a
+        batch of observations.
+
+        Args:
+            states (np.ndarray): Batch of states in agent-specific observation
+                format.
+
+        Returns:
+            torch.Tensor: Tensor of shape ``(batch_size, num_actions)``
+            containing Q-values.
+        """
         with torch.no_grad():
             states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
             return self.policy_net(states_t)
 
     def compute_expected_return(self, transitions: list[Transition]) -> np.ndarray:
-        """Evaluate transitions using own Q-network.
+        """Compute Expected Return.
 
-        For each transition, computes the expected return:
-            Q(s, a) from own policy.
-        Returns array of shape (len(transitions),).
+        Computes per-transition action values ``Q(s, a)`` from the current
+        policy network.
+
+        Args:
+            transitions (list[Transition]): Transition batch containing state
+                and action fields.
+
+        Returns:
+            np.ndarray: Expected returns with shape ``(len(transitions),)``.
         """
         states = np.array([t.state for t in transitions], dtype=np.float32)
         actions = np.array([t.action for t in transitions], dtype=np.int64)
@@ -306,12 +415,32 @@ class DQNAgent:
         return q_values.cpu().numpy()
 
     def add_to_buffer(self, transitions: list[Transition]) -> None:
-        """Add external transitions to the replay buffer."""
+        """Add Transitions To Replay Buffer.
+
+        Appends externally provided transitions to the replay buffer.
+
+        Args:
+            transitions (list[Transition]): Transitions to append.
+
+        Returns:
+            None: Transitions are added to internal replay storage.
+        """
         self.replay_buffer.extend(transitions)
 
     # --- Serialization ---
 
     def save(self, path: str) -> None:
+        """Save Agent Checkpoint.
+
+        Saves policy and target network weights, optimizer state, and training
+        step counter to disk.
+
+        Args:
+            path (str): Destination path for the checkpoint file.
+
+        Returns:
+            None: Checkpoint is written to disk.
+        """
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(
             {
@@ -324,6 +453,17 @@ class DQNAgent:
         )
 
     def load(self, path: str) -> None:
+        """Load Agent Checkpoint.
+
+        Loads policy and target network weights, optimizer state, and training
+        step counter from a saved checkpoint.
+
+        Args:
+            path (str): Source path of the checkpoint file.
+
+        Returns:
+            None: Model and optimizer states are restored in place.
+        """
         checkpoint = torch.load(path, map_location=self.device, weights_only=True)
         self.policy_net.load_state_dict(checkpoint["policy_net"])
         self.target_net.load_state_dict(checkpoint["target_net"])

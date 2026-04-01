@@ -45,6 +45,17 @@ log = logging.getLogger(__name__)
 
 
 def _resolve_device(device_str: str) -> torch.device:
+    """Resolve Torch Device.
+
+    Resolves a configured device string into a concrete torch device.
+
+    Args:
+        device_str (str): Device selector such as ``"auto"``, ``"cpu"``, or
+            ``"cuda"``.
+
+    Returns:
+        torch.device: Resolved device object.
+    """
     if device_str == "auto":
         if torch.cuda.is_available():
             return torch.device("cuda")
@@ -53,7 +64,19 @@ def _resolve_device(device_str: str) -> torch.device:
 
 
 def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, ...]:
-    """Determine the observation shape for a given obs_type."""
+    """Get Observation Shape.
+
+    Determines the observation shape expected by the selected observation mode.
+
+    Args:
+        env (gym.Env): Environment instance.
+        obs_type (str): Observation type (for example ``"rgb"`` or
+            ``"puzzle_state"``).
+        cfg (DictConfig): Experiment configuration.
+
+    Returns:
+        tuple[int, ...]: Observation tensor shape for agent initialization.
+    """
     if obs_type == "rgb":
         return (3, cfg.env.window_width, cfg.env.window_height)
     else:
@@ -65,7 +88,16 @@ def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, .
 
 
 def run_train_single(cfg: DictConfig) -> float:
-    """Train a single DQN agent. Returns best eval win rate."""
+    """Run Single-Agent Training.
+
+    Trains one DQN agent and returns the best observed evaluation win rate.
+
+    Args:
+        cfg (DictConfig): Experiment configuration.
+
+    Returns:
+        float: Best evaluation win rate achieved during training.
+    """
     device = _resolve_device(cfg.device)
     log.info(f"Device: {device}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
@@ -94,7 +126,17 @@ def run_train_single(cfg: DictConfig) -> float:
 
 
 def run_train_dyad(cfg: DictConfig) -> float:
-    """Train two agents in a dyad learning setup. Returns best eval win rate."""
+    """Run Dyad Training.
+
+    Trains two DQN agents with dyad sharing and returns the best evaluation win
+    rate across agents.
+
+    Args:
+        cfg (DictConfig): Experiment configuration.
+
+    Returns:
+        float: Best evaluation win rate across both dyad agents.
+    """
     device = _resolve_device(cfg.device)
     log.info(f"Device: {device}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
@@ -142,7 +184,16 @@ def run_train_dyad(cfg: DictConfig) -> float:
 
 
 def run_eval(cfg: DictConfig) -> None:
-    """Evaluate a trained agent from checkpoint."""
+    """Run Checkpoint Evaluation.
+
+    Loads a trained checkpoint and evaluates the agent on configured episodes.
+
+    Args:
+        cfg (DictConfig): Experiment configuration.
+
+    Returns:
+        None: Evaluation results are logged.
+    """
     device = _resolve_device(cfg.device)
     env = make_env(cfg)
     obs_shape = _get_obs_shape(env, cfg.env.obs_type, cfg)
@@ -165,7 +216,16 @@ def run_eval(cfg: DictConfig) -> None:
 
 
 def run_baseline(cfg: DictConfig) -> dict:
-    """Evaluate the masked-random baseline and persist the result."""
+    """Run Masked-Random Baseline.
+
+    Evaluates a masked-random policy and saves baseline metrics.
+
+    Args:
+        cfg (DictConfig): Experiment configuration.
+
+    Returns:
+        dict: Baseline metric dictionary.
+    """
     env = make_env(cfg)
     result = evaluate_masked_random(
         env,
@@ -187,6 +247,16 @@ def run_baseline(cfg: DictConfig) -> dict:
 
 @hydra.main(config_path="config", config_name="default", version_base=None)
 def main(cfg: DictConfig) -> float | None:
+    """Dispatch Experiment Mode.
+
+    Routes execution to train, evaluation, or baseline mode based on config.
+
+    Args:
+        cfg (DictConfig): Hydra-composed runtime configuration.
+
+    Returns:
+        float | None: Best win rate for training modes, otherwise ``None``.
+    """
     # Set random seeds
     np.random.seed(cfg.seed)
     torch.manual_seed(cfg.seed)
