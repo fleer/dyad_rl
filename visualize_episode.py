@@ -23,6 +23,7 @@ Usage:
 import argparse
 import logging
 import os
+import shutil
 import subprocess
 import sys
 
@@ -557,6 +558,7 @@ def main():
             log.info(f"You can play it with: mpv {args.mp4_output} (or any video player)")
         else:
             log.error("Failed to create MP4 video")
+        shutil.rmtree(args.frames_dir)  # Clean up frames directory after video creation
 
     log.info("Visualization complete!")
 
