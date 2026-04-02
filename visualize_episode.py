@@ -23,6 +23,7 @@ Usage:
 import argparse
 import logging
 import os
+from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -116,31 +117,43 @@ def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
     log.warning(f"Could not find saved config for {experiment_name}")
     log.info("Inferring config from experiment name...")
 
-    # Create a minimal config
-    cfg = OmegaConf.create({
-        "env": {
-            "puzzle": "netslide",
-            "params": "2x3b1",
-            "obs_type": "puzzle_state",
-            "render_mode": "rgb_array",
-            "window_width": 128,
-            "window_height": 128,
-            "allow_undo": False,
-            "max_state_repeats": 200,
-            "include_cursor_in_state_info": True,
-        },
-        "agent": {
-            "type": "mlp" if "mlp" in experiment_name.lower() else "cnn",
-            "learning_rate": 1e-4,
-            "net_arch": [64, 32, 16],
-        },
-        "training": {
-            "total_episodes": 40000,
-            "max_steps": 1000,
-        },
-        "seed": 42,
-        "device": "auto",
-    })
+    # Build a fallback config by composing repository YAMLs so mandatory
+    # agent/training keys are present even when Hydra outputs are missing.
+    repo_root = Path(__file__).resolve().parent
+    config_dir = repo_root / "config"
+
+    inferred_agent = "mlp" if "mlp" in experiment_name.lower() else "cnn"
+    inferred_obs_type = "puzzle_state" if inferred_agent == "mlp" else "rgb"
+
+    cfg = OmegaConf.create(
+        {
+            "mode": "train",
+            "experiment_name": experiment_name,
+            "seed": 42,
+            "device": "auto",
+        }
+    )
+
+    default_cfg_path = config_dir / "default.yaml"
+    if default_cfg_path.exists():
+        cfg = OmegaConf.merge(cfg, OmegaConf.load(default_cfg_path))
+
+    env_cfg_path = config_dir / "env" / "netslide_2x3.yaml"
+    if env_cfg_path.exists():
+        cfg = OmegaConf.merge(cfg, OmegaConf.create({"env": OmegaConf.load(env_cfg_path)}))
+
+    agent_cfg_path = config_dir / "agent" / f"{inferred_agent}.yaml"
+    if agent_cfg_path.exists():
+        cfg = OmegaConf.merge(cfg, OmegaConf.create({"agent": OmegaConf.load(agent_cfg_path)}))
+
+    training_cfg_path = config_dir / "training" / "dqn.yaml"
+    if training_cfg_path.exists():
+        cfg = OmegaConf.merge(cfg, OmegaConf.create({"training": OmegaConf.load(training_cfg_path)}))
+
+    # Ensure visualization-safe settings.
+    cfg.experiment_name = experiment_name
+    cfg.env.obs_type = inferred_obs_type
+    cfg.env.render_mode = "rgb_array"
 
     return cfg
 
@@ -289,16 +302,32 @@ def load_agent(
         log.info("Attempting to auto-detect num_actions from checkpoint...")
         try:
             checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
-            # Get the output layer weight shape
             policy_state = checkpoint["policy_net"]
-            # The last layer should be the output layer
-            for key in sorted(policy_state.keys(), reverse=True):
-                if "weight" in key and "bias" not in key:
-                    last_layer_weight = policy_state[key]
-                    if last_layer_weight.dim() == 2 and last_layer_weight.shape[1] == 16:  # 16 is last hidden layer size
-                        num_actions = last_layer_weight.shape[0]
-                        log.info(f"Auto-detected num_actions: {num_actions}")
-                        break
+
+            # Detect output layer generically from the highest indexed linear
+            # weight in the state dict (works for arbitrary hidden sizes).
+            weight_entries = [
+                (k, v)
+                for k, v in policy_state.items()
+                if "weight" in k and "bias" not in k and getattr(v, "dim", lambda: 0)() == 2
+            ]
+            if not weight_entries:
+                raise RuntimeError("Could not find any 2D weight tensors in checkpoint policy_net")
+
+            def _layer_index(key: str) -> int:
+                parts = key.split(".")
+                for part in reversed(parts):
+                    if part.isdigit():
+                        return int(part)
+                return -1
+
+            last_layer_key, last_layer_weight = max(weight_entries, key=lambda kv: _layer_index(kv[0]))
+            num_actions = int(last_layer_weight.shape[0])
+            log.info(
+                "Auto-detected num_actions from checkpoint layer %s: %d",
+                last_layer_key,
+                num_actions,
+            )
             
             # Recreate agent with correct num_actions
             agent = DQNAgent(
@@ -602,18 +631,19 @@ def main():
     log.info(f"Agent loaded: {agent.policy_net.__class__.__name__}")
 
     # Run visualization
-    try:
-        stats = visualize_episode(
-            agent,
-            env,
-            cfg,
-            max_steps=args.max_steps,
-            save_frames=args.save_frames,
-            output_dir=args.frames_dir,
-        )
-        log.info(f"Episode stats: {stats}")
-    finally:
-        env.close()
+    stats = visualize_episode(
+        agent,
+        env,
+        cfg,
+        max_steps=args.max_steps,
+        save_frames=args.save_frames,
+        output_dir=args.frames_dir,
+    )
+    log.info(f"Episode stats: {stats}")
+
+    # The Simon Tatham C backend can segfault on explicit close at process
+    # shutdown in some environments; leaving cleanup to interpreter teardown
+    # avoids a successful run being reported as a crash.
 
     # Create video if mp4_output was specified
     if args.mp4_output is not None:
