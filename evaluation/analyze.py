@@ -117,6 +117,60 @@ def plot_learning_curves(
     plt.close(fig_win)
 
 
+def plot_training_loss_curves(
+    experiments: dict[str, str],
+    output_dir: str,
+    window: int = 100,
+    filename: str = "training_loss.png",
+) -> None:
+    """Plot Training Loss Curves.
+
+    Plots and saves smoothed training loss trajectories.
+
+    Args:
+        experiments (dict[str, str]): Mapping of experiment names to training
+            CSV paths.
+        output_dir (str): Directory to save output plots.
+        window (int): Moving-average window size.
+        filename (str): Output image filename.
+
+    Returns:
+        None: Plot image file is written to disk.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    plotted = 0
+
+    for name, csv_path in experiments.items():
+        data = load_training_csv(csv_path)
+        episodes = np.asarray(data.get("episode", []), dtype=float)
+        losses = np.asarray(data.get("loss", []), dtype=float)
+
+        if len(episodes) == 0 or len(losses) == 0:
+            continue
+
+        if len(losses) >= window:
+            loss_smooth = smooth(losses.tolist(), window)
+            ax.plot(episodes[window - 1 :], loss_smooth, label=name, alpha=0.85)
+        else:
+            ax.plot(episodes, losses, label=f"{name} (unsmoothed)", alpha=0.65)
+        plotted += 1
+
+    if plotted == 0:
+        plt.close(fig)
+        return
+
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Average Training Loss")
+    ax.set_title("Training Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, filename), dpi=150)
+    plt.close(fig)
+
+
 def plot_eval_comparison(
     experiments: dict[str, str],
     output_dir: str,

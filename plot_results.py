@@ -16,6 +16,7 @@ from typing import Dict
 from evaluation.analyze import (
     plot_eval_comparison,
     plot_learning_curves,
+    plot_training_loss_curves,
 )
 
 
@@ -83,7 +84,14 @@ def main() -> None:
 
     if available_train_2x3:
         plot_learning_curves(available_train_2x3, vis_2x3, window=100)
+        plot_training_loss_curves(
+            available_train_2x3,
+            vis_2x3,
+            window=100,
+            filename="training_loss_comparison.png",
+        )
         print(f"Saved learning curves (2x3): {vis_2x3}")
+        print(f"Saved training loss curves (2x3): {vis_2x3}")
     else:
         print("Skipped 2x3 learning curves: no training CSV files found.")
 
