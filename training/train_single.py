@@ -205,7 +205,7 @@ def _run_episode(
         # Keep target-update cadence tied to environment steps (SB3-style).
         agent.update_target_net()
 
-        total_return += reward
+        total_return += shaped_reward
         obs = next_obs
         state_discrete = next_state_discrete
         state_rgb = next_state_rgb
@@ -264,6 +264,7 @@ def train_single(
         env,
         n_episodes=eval_episodes,
         max_steps=max_steps,
+        reward_step_penalty=reward_step_penalty,
     )
     logger.log_baseline("masked_random", baseline_result, eval_episodes, max_steps)
     log.info(
@@ -319,7 +320,13 @@ def train_single(
 
         # Periodic evaluation
         if episode % eval_interval == 0:
-            eval_result = evaluate(agent, env, n_episodes=eval_episodes, max_steps=max_steps)
+            eval_result = evaluate(
+                agent,
+                env,
+                n_episodes=eval_episodes,
+                max_steps=max_steps,
+                reward_step_penalty=reward_step_penalty,
+            )
             eval_record = EvalRecord(
                 episode=episode,
                 avg_return=eval_result["avg_return"],

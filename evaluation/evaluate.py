@@ -62,7 +62,8 @@ def evaluate(
     agent: DQNAgent,
     env: gym.Env,
     n_episodes: int = 1000,
-    max_steps: int = 10000
+    max_steps: int = 10000,
+    reward_step_penalty: float = 0.0,
 ) -> dict:
     """Evaluate Agent Policy.
 
@@ -73,6 +74,8 @@ def evaluate(
         env (gym.Env): Gymnasium environment.
         n_episodes (int): Number of evaluation episodes.
         max_steps (int): Maximum steps per episode.
+        reward_step_penalty (float): Per-step shaping penalty subtracted from
+            environment reward for return accounting.
 
     Returns:
         dict: Aggregated return, win-rate, length, and uncertainty metrics.
@@ -96,7 +99,8 @@ def evaluate(
             obs_raw, reward, terminated, truncated, info = env.step(action)
             obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
 
-            total_return += reward
+            shaped_reward = reward - reward_step_penalty
+            total_return += shaped_reward
 
             if _is_episode_done(terminated, truncated):
                 break
@@ -129,6 +133,7 @@ def evaluate_masked_random(
     env: gym.Env,
     n_episodes: int = 100,
     max_steps: int = 10000,
+    reward_step_penalty: float = 0.0,
 ) -> dict:
     """Evaluate Masked-Random Baseline.
 
@@ -138,6 +143,8 @@ def evaluate_masked_random(
         env (gym.Env): Gymnasium environment.
         n_episodes (int): Number of episodes to run.
         max_steps (int): Maximum steps per episode.
+        reward_step_penalty (float): Per-step shaping penalty subtracted from
+            environment reward for return accounting.
 
     Returns:
         dict: Baseline average return, win rate, and episode length.
@@ -155,7 +162,8 @@ def evaluate_masked_random(
             valid_actions = np.where(env.action_masks())[0]
             action = int(np.random.choice(valid_actions))
             obs_raw, reward, terminated, truncated, info = env.step(action)
-            total_return += reward
+            shaped_reward = reward - reward_step_penalty
+            total_return += shaped_reward
 
             if _is_episode_done(terminated, truncated):
                 break

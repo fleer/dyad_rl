@@ -173,8 +173,18 @@ def train_dyad(
     best_win_rate_b = -1.0
     total_shared_to_a = 0
     total_shared_to_b = 0
-    baseline_a = evaluate_masked_random(env_a, n_episodes=eval_episodes, max_steps=max_steps)
-    baseline_b = evaluate_masked_random(env_b, n_episodes=eval_episodes, max_steps=max_steps)
+    baseline_a = evaluate_masked_random(
+        env_a,
+        n_episodes=eval_episodes,
+        max_steps=max_steps,
+        reward_step_penalty=reward_step_penalty,
+    )
+    baseline_b = evaluate_masked_random(
+        env_b,
+        n_episodes=eval_episodes,
+        max_steps=max_steps,
+        reward_step_penalty=reward_step_penalty,
+    )
     logger_a.log_baseline("masked_random", baseline_a, eval_episodes, max_steps)
     logger_b.log_baseline("masked_random", baseline_b, eval_episodes, max_steps)
     log.info(
@@ -287,7 +297,13 @@ def train_dyad(
                 ("B", agent_b, env_b, logger_b, best_win_rate_b, dir_b),
             ]:
                 baseline = baseline_a if name == "A" else baseline_b
-                result = evaluate(agent, env, n_episodes=eval_episodes, max_steps=max_steps)
+                result = evaluate(
+                    agent,
+                    env,
+                    n_episodes=eval_episodes,
+                    max_steps=max_steps,
+                    reward_step_penalty=reward_step_penalty,
+                )
                 record = EvalRecord(
                     episode=episode,
                     avg_return=result["avg_return"],
