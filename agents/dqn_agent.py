@@ -8,7 +8,7 @@ import torch.optim as optim
 from omegaconf import DictConfig
 
 from agents.networks import MLPNetwork, CNNNetwork
-from utils.replay_buffer import ReplayBuffer, HERReplayBuffer, Transition
+from utils.replay_buffer import ReplayBuffer, Transition
 
 
 def polyak_update(params, target_params, tau: float) -> None:
@@ -139,42 +139,7 @@ class DQNAgent:
         self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True)
         self.loss_fn = nn.SmoothL1Loss()
 
-        replay_type = str(getattr(a_cfg, "replay_buffer_type", "standard")).lower()
-        if replay_type == "her":
-            n_sampled_goal = int(getattr(a_cfg, "her_n_sampled_goal", 4))
-            goal_strategy = str(getattr(a_cfg, "her_goal_selection_strategy", "future"))
-            goal_tolerance = float(getattr(a_cfg, "her_goal_tolerance", 1e-6))
-
-            def _reward_fn(achieved_goal: np.ndarray, goal: np.ndarray) -> float:
-                """Compute HER Sparse Reward.
-
-                Computes a sparse binary reward for hindsight relabeling based
-                on whether the achieved goal matches the relabeled goal.
-
-                Args:
-                    achieved_goal (np.ndarray): Goal state reached by the
-                        transition.
-                    goal (np.ndarray): Relabeled target goal state.
-
-                Returns:
-                    float: ``0.0`` when goals match within tolerance, otherwise
-                    ``-1.0``.
-                """
-                # Sparse binary reward used by HER relabeling.
-                return (
-                    0.0
-                    if np.allclose(achieved_goal, goal, atol=goal_tolerance)
-                    else -1.0
-                )
-
-            self.replay_buffer = HERReplayBuffer(
-                capacity=self.buffer_size,
-                reward_fn=_reward_fn,
-                n_sampled_goal=n_sampled_goal,
-                goal_selection_strategy=goal_strategy,
-            )
-        else:
-            self.replay_buffer = ReplayBuffer(self.buffer_size)
+        self.replay_buffer = ReplayBuffer(self.buffer_size)
         self.steps_done = 0
         self.current_epsilon = self.exploration_initial_eps
         self.last_optimize_stats = {

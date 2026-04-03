@@ -27,8 +27,3 @@ exploration_decay: 100000      # Exponential epsilon decay constant in env steps
 exploration_initial_eps: 1.0   # SB3 default: 1.0
 exploration_final_eps: 0.05    # SB3 default: 0.05
 max_grad_norm: 10              # SB3 default: 10 — gradient norm clipping threshold
-
-replay_buffer_type: standard   # standard | her
-her_n_sampled_goal: 4
-her_goal_selection_strategy: future # future | final | episode
-her_goal_tolerance: 1.0e-6

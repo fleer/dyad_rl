@@ -196,7 +196,7 @@ run_exp() {
 #   • Disable greedy replay-buffer pre-fill (learning_starts controls this):
 #       add  agent.learning_starts=0
 #   • Change exploration schedule:
-#       add  agent.exploration_fraction=0.2 agent.exploration_final_eps=0.01
+#       add  agent.exploration_decay=50000 agent.exploration_final_eps=0.01
 #   • Use a different random seed:
 #       add  seed=7
 #
@@ -334,8 +334,6 @@ fi
 #       add  training.total_episodes=20000
 #   • Tune only Agent B's learning rate:
 #       add  agent_b.learning_rate=1e-3
-#   • Disable HER replay buffer and use standard experience replay:
-#       add  agent_a.replay_buffer_type=standard  agent_b.replay_buffer_type=standard
 #   • Change puzzle difficulty:
 #       add  env=netslide_3x3
 #
