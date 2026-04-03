@@ -365,6 +365,66 @@ Plots are saved separately for each puzzle size:
 
 The evaluation plots include shaded uncertainty bands around the win-rate curves, reflecting the standard error of the mean (SEM) computed during each evaluation run across multiple episodes.
 
+## Resuming Training from a Checkpoint
+
+`continue_training.py` picks up an existing experiment from the latest checkpoint and trains for additional episodes. It is useful for extending a run that finished too early or for fine-tuning with adjusted hyperparameters.
+
+### Quick Start
+
+```bash
+# Resume from the latest checkpoint in a directory
+python continue_training.py checkpoints/exp1_mlp_2x3 --n-episodes 5000
+
+# Resume from a specific checkpoint file
+python continue_training.py checkpoints/exp1_mlp_2x3/checkpoint_20000.pt --n-episodes 5000
+
+# Specify output name and device
+python continue_training.py checkpoints/exp1_mlp_2x3 --n-episodes 5000 \
+    --experiment-name exp1_mlp_2x3_ft --device cpu
+
+# Override any config key
+python continue_training.py checkpoints/exp1_mlp_2x3 --n-episodes 5000 \
+    agent.learning_rate=5e-5 training.eval_interval=500
+```
+
+### Checkpoint Selection
+
+When a directory is passed the script selects the checkpoint automatically:
+
+1. **Highest-numbered** `checkpoint_N.pt` (e.g. `checkpoint_40000.pt`)
+2. `final_model.pt` — if no numbered checkpoints exist
+3. `best_model.pt` — final fallback
+
+### Epsilon Continuity
+
+The epsilon schedule continues seamlessly from where training left off. The script reads `steps_done` from the checkpoint and sets the exploration horizon to `steps_done + n_new_steps`, so epsilon never resets to 1.0 mid-training.
+
+### Output Directories
+
+Results and new checkpoints are written to separate directories to preserve the original run:
+
+| Original | Resumed |
+|----------|---------|
+| `results/exp1_mlp_2x3/` | `results/exp1_mlp_2x3_resumed/` |
+| `checkpoints/exp1_mlp_2x3/` | `checkpoints/exp1_mlp_2x3_resumed/` |
+
+Use `--experiment-name` to choose a custom output name.
+
+### Command-Line Options
+
+```
+checkpoint            (required) Path to a .pt file or a checkpoint directory
+
+--n-episodes N        (required) Number of additional training episodes
+
+--device DEV          (optional) auto | cpu | cuda | rocm  (default: from config)
+
+--experiment-name NAME (optional) Override output directory name
+                       Default: <original_name>_resumed
+
+key=value ...         (optional) Config overrides, e.g. agent.learning_rate=5e-5
+```
+
 ## Smoke Test
 
 Verify the full pipeline works end-to-end:
