@@ -274,9 +274,6 @@ def load_agent(
         num_actions = 5
         log.info(f"  Using inferred num_actions: {num_actions}")
     
-    total_steps = cfg.training.total_episodes * cfg.training.max_steps
-    log.info(f"  Total steps for schedules: {total_steps}")
-
     log.info("Initializing agent...")
     agent = DQNAgent(
         obs_type=cfg.env.obs_type,
@@ -284,7 +281,6 @@ def load_agent(
         num_actions=num_actions,
         cfg=cfg,
         device=device,
-        total_steps=total_steps,
     )
     
     log.info("Agent initialized. Loading checkpoint...")
@@ -336,7 +332,6 @@ def load_agent(
                 num_actions=num_actions,
                 cfg=cfg,
                 device=device,
-                total_steps=total_steps,
             )
             agent.load(checkpoint_path)
             log.info("Checkpoint loaded successfully after auto-detection")

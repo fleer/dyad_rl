@@ -1,3 +1,4 @@
+import math
 import os
 
 import numpy as np
@@ -43,7 +44,6 @@ class DQNAgent:
         cfg: DictConfig,
         agent_cfg: DictConfig | None = None,
         device: torch.device | None = None,
-        total_steps: int = 0,
     ):
         """Initialize DQN Agent.
 
@@ -61,8 +61,6 @@ class DQNAgent:
                 configuration. If ``None``, ``cfg.agent`` is used.
             device (torch.device | None): Torch device for tensors and models.
                 Defaults to CPU when ``None``.
-            total_steps (int): Total planned training steps used to compute the
-                epsilon linear decay horizon.
 
         Returns:
             None: The constructor initializes the instance in place.
@@ -79,15 +77,13 @@ class DQNAgent:
         self.batch_size = a_cfg.batch_size
         self.gamma = a_cfg.gamma
         self.exploration_initial_eps = float(a_cfg.exploration_initial_eps)
-        self.exploration_final_eps   = float(a_cfg.exploration_final_eps)
-        self.exploration_fraction    = float(a_cfg.exploration_fraction)
+        self.exploration_final_eps = float(a_cfg.exploration_final_eps)
+        self.exploration_decay = max(1.0, float(a_cfg.exploration_decay))
         self.tau = a_cfg.tau
         self.learning_rate = a_cfg.learning_rate
         self.buffer_size = a_cfg.buffer_size
         self.max_grad_norm = float(a_cfg.max_grad_norm)
         self.target_update_interval = int(a_cfg.target_update_interval)
-        # Linear exploration schedule endpoint (mirrors SB3 LinearSchedule)
-        self._exploration_steps = max(1, int(self.exploration_fraction * total_steps))
         self._n_calls = 0
 
         # Build networks
@@ -140,7 +136,7 @@ class DQNAgent:
         for p in self.target_net.parameters():
             p.requires_grad = False
 
-        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=self.learning_rate)
+        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True)
         self.loss_fn = nn.SmoothL1Loss()
 
         replay_type = str(getattr(a_cfg, "replay_buffer_type", "standard")).lower()
@@ -212,11 +208,12 @@ class DQNAgent:
         Returns:
             int: Selected discrete action index.
         """
-        # Linear decay: mirrors SB3 LinearSchedule
-        progress = min(1.0, self.steps_done / self._exploration_steps)
-        eps = self.exploration_initial_eps + progress * (
-            self.exploration_final_eps - self.exploration_initial_eps
-        )
+        # Exponential decay:
+        # eps = eps_end + (eps_start - eps_end) * exp(-steps_done / eps_decay)
+        eps = self.exploration_final_eps + (
+            self.exploration_initial_eps - self.exploration_final_eps
+        ) * math.exp(-1.0 * self.steps_done / self.exploration_decay)
+        eps = max(self.exploration_final_eps, min(self.exploration_initial_eps, eps))
         self.current_epsilon = eps
         if explore:
             self.steps_done += 1
@@ -298,12 +295,17 @@ class DQNAgent:
                     valid_any = non_final_next_action_masks.any(dim=1)
 
                     # Keep default 0.0 bootstrap for rows with no valid next actions.
+                    # DOUBLE DQN — policy_net selects, target_net evaluates (unbiased)
                     if valid_any.any():
-                        masked_q_values = target_q_values[valid_any].masked_fill(
-                            ~non_final_next_action_masks[valid_any], float("-inf")
-                        )
+                        policy_q = self.policy_net(non_final_next_states)
+                        policy_q_masked = policy_q[valid_any].masked_fill(~non_final_next_action_masks[valid_any], float("-inf"))
+                        # masked_q_values = target_q_values[valid_any].masked_fill(
+                        #     ~non_final_next_action_masks[valid_any], float("-inf")
+                        # )
                         valid_indices = non_final_indices[valid_any]
-                        next_state_values[valid_indices] = masked_q_values.max(1).values.unsqueeze(1)
+                        # next_state_values[valid_indices] = masked_q_values.max(1).values.unsqueeze(1)
+                        best_actions = policy_q_masked.argmax(1, keepdim=True)
+                        next_state_values[valid_indices] = target_q_values[valid_any].gather(1, best_actions)
                 else:
                     next_state_values[non_final_mask] = target_q_values.max(1).values.unsqueeze(1)
         # Compute the expected Q values

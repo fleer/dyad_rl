@@ -113,7 +113,6 @@ def run_train_single(cfg: DictConfig) -> float:
         num_actions=num_actions,
         cfg=cfg,
         device=device,
-        total_steps=cfg.training.total_episodes * cfg.training.max_steps,
     )
 
     results_dir = os.path.join("results", cfg.experiment_name)
@@ -159,7 +158,6 @@ def run_train_dyad(cfg: DictConfig) -> float:
         cfg=cfg,
         agent_cfg=agent_a_cfg,
         device=device,
-        total_steps=cfg.training.total_episodes * cfg.training.max_steps // 2,
     )
     agent_b = DQNAgent(
         obs_type="rgb",
@@ -168,7 +166,6 @@ def run_train_dyad(cfg: DictConfig) -> float:
         cfg=cfg,
         agent_cfg=agent_b_cfg,
         device=device,
-        total_steps=cfg.training.total_episodes * cfg.training.max_steps // 2,
     )
 
     results_dir = os.path.join("results", cfg.experiment_name)

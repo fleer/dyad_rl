@@ -20,7 +20,7 @@ agent_a:
   gamma: 0.99
   exploration_initial_eps: 1.0
   exploration_final_eps: 0.05
-  exploration_fraction: 0.1
+  exploration_decay: 100000
   tau: 1.0
   learning_rate: 1.0e-4
   buffer_size: 50000
@@ -39,7 +39,7 @@ agent_b:
   gamma: 0.99
   exploration_initial_eps: 1.0
   exploration_final_eps: 0.05
-  exploration_fraction: 0.1
+  exploration_decay: 100000
   tau: 1.0
   learning_rate: 1.0e-4
   buffer_size: 50000
@@ -81,16 +81,12 @@ hydra:
       agent_b.batch_size:
         type: categorical
         choices: [32, 64, 128, 256]
-      agent_a.exploration_fraction:
-        type: float
-        low: 0.05
-        high: 0.5
-        log: true
-      agent_b.exploration_fraction:
-        type: float
-        low: 0.05
-        high: 0.5
-        log: true
+      agent_a.exploration_decay:
+        type: categorical
+        choices: [5000, 10000, 20000, 50000, 100000]
+      agent_b.exploration_decay:
+        type: categorical
+        choices: [5000, 10000, 20000, 50000, 100000]
       agent_a.tau:
         type: categorical
         choices: [0.05, 0.1, 0.5, 1.0]

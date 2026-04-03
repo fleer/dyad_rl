@@ -37,11 +37,9 @@ hydra:
       agent.batch_size:
         type: categorical
         choices: [32, 64, 128, 256]
-      agent.exploration_fraction:
-        type: float
-        low: 0.05
-        high: 0.5
-        log: true
+      agent.exploration_decay:
+        type: categorical
+        choices: [5000, 10000, 20000, 50000, 100000]
       agent.hidden_size:
         type: categorical
         choices: [32, 64, 128, 256]

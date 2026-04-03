@@ -107,7 +107,7 @@ def _make_cfg(obs_type="puzzle_state"):
             "gamma": 0.99,
             "exploration_initial_eps": 1.0,
             "exploration_final_eps": 0.05,
-            "exploration_fraction": 0.1,
+            "exploration_decay": 100000,
             "tau": 1.0,
             "learning_rate": 1e-4,
             "buffer_size": 10000,

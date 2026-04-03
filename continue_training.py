@@ -281,18 +281,12 @@ def main() -> None:
     num_actions = env.action_space.n
     log.info(f"Obs shape: {obs_shape}  |  Actions: {num_actions}")
 
-    # Total steps for epsilon schedule: prior progress + new budget so that
-    # epsilon continues exactly from where it was rather than resetting.
-    additional_steps = args.n_episodes * cfg.training.max_steps
-    total_steps_for_schedule = steps_done_at_resume + additional_steps
-
     agent = DQNAgent(
         obs_type=cfg.env.obs_type,
         obs_shape=obs_shape,
         num_actions=num_actions,
         cfg=cfg,
         device=device,
-        total_steps=total_steps_for_schedule,
     )
     agent.load(checkpoint_path)
     log.info(
