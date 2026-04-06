@@ -5,42 +5,6 @@ from agents.dqn_agent import DQNAgent
 from utils.obs_processing import process_obs
 
 
-def _transition_done(
-    terminated: bool,
-    truncated: bool,
-) -> bool:
-    """Check Transition Terminal State.
-
-    Determines whether a transition should be marked terminal for replay
-    storage.
-
-    Args:
-        terminated (bool): Environment termination signal.
-        truncated (bool): Environment truncation signal.
-
-    Returns:
-        bool: ``True`` if transition ends an episode boundary.
-    """
-    return terminated or truncated
-
-def _is_episode_done(
-    terminated: bool,
-    truncated: bool,
-) -> bool:
-    """Check Episode Completion.
-
-    Determines whether the current episode should stop.
-
-    Args:
-        terminated (bool): Environment termination signal.
-        truncated (bool): Environment truncation signal.
-
-    Returns:
-        bool: ``True`` when the episode is complete.
-    """
-    return terminated or truncated
-
-
 def _sem(values: np.ndarray) -> float:
     """Compute Standard Error.
 
@@ -102,7 +66,7 @@ def evaluate(
             shaped_reward = reward - reward_step_penalty
             total_return += shaped_reward
 
-            if _is_episode_done(terminated, truncated):
+            if terminated or truncated:
                 break
 
         returns.append(total_return)
@@ -165,7 +129,7 @@ def evaluate_masked_random(
             shaped_reward = reward - reward_step_penalty
             total_return += shaped_reward
 
-            if _is_episode_done(terminated, truncated):
+            if terminated or truncated:
                 break
 
         returns.append(total_return)
@@ -210,11 +174,10 @@ def collect_eval_trajectory(
             next_obs_raw, agent.obs_type, dual_obs=True
         )
 
-        episode_done = _is_episode_done(terminated, truncated)
-        transition_done = _transition_done(terminated, truncated)
+        episode_done = terminated or truncated
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)
-            if transition_done
+            if episode_done
             else np.asarray(env.action_masks(), dtype=bool)
         )
 
@@ -223,7 +186,7 @@ def collect_eval_trajectory(
             "action": action,
             "reward": reward,
             "next_state": next_obs,
-            "done": transition_done,
+            "done": episode_done,
             "next_action_mask": next_action_mask,
             "state_discrete": state_discrete,
             "next_state_discrete": next_state_discrete,

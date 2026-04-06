@@ -53,7 +53,7 @@ def make_env(cfg: DictConfig) -> gym.Env:
     )
     if cfg.env.obs_type == "puzzle_state":
         env = FlattenObservation(env)
-        env = NormalizePuzzleStateWrapper(env)
+        # env = NormalizePuzzleStateWrapper(env)
     env = ActionMaskWrapper(env)
     return env
 
@@ -82,6 +82,7 @@ def make_dual_obs_env(cfg: DictConfig) -> gym.Env:
         include_cursor_in_state_info=cfg.env.include_cursor_in_state_info,
         params=cfg.env.params,
     )
+    # TODO: FlattenObservation needed for "puzzle_state" branch of dual obs!!!
     env = NormalizeDualPuzzleStateWrapper(env)
     env = ActionMaskWrapper(env)
     return env

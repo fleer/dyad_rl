@@ -12,41 +12,6 @@ from evaluation.evaluate import evaluate, evaluate_masked_random
 
 log = logging.getLogger(__name__)
 
-def _is_episode_done(
-    terminated: bool,
-    truncated: bool,
-) -> bool:
-    """Check Episode Completion.
-
-    Determines whether an episode has ended.
-
-    Args:
-        terminated (bool): Environment termination signal.
-        truncated (bool): Environment truncation signal.
-
-    Returns:
-        bool: ``True`` when the episode is done.
-    """
-    return terminated or truncated
-
-
-def _transition_done(
-    terminated: bool,
-    truncated: bool,
-) -> bool:
-    """Check Transition Terminal State.
-
-    Determines whether a transition should be marked terminal in replay.
-
-    Args:
-        terminated (bool): Environment termination signal.
-        truncated (bool): Environment truncation signal.
-
-    Returns:
-        bool: ``True`` if transition ends an episode boundary.
-    """
-    return terminated or truncated
-
 
 def prefill_buffer(
     agent: DQNAgent,
@@ -75,25 +40,25 @@ def prefill_buffer(
     log.info(f"Prefilling replay buffer with {num_transitions} random transitions...")
     collected = 0
     while collected < num_transitions:
-        obs_raw, info = env.reset()
+        obs_raw, _ = env.reset()
         obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs)
 
-        for step in range(max_steps):
+        for _ in range(max_steps):
             action_mask = env.action_masks()
             valid_actions = np.where(action_mask)[0]
             action = int(np.random.choice(valid_actions))
 
             next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
+            print(next_obs_raw)
             shaped_reward = reward - reward_step_penalty
             next_obs, next_state_discrete, next_state_rgb = process_obs(
                 next_obs_raw, agent.obs_type, dual_obs
             )
 
-            episode_done = _is_episode_done(terminated, truncated)
-            transition_done = _transition_done(terminated, truncated)
+            episode_done = terminated or truncated
             next_action_mask = (
                 np.zeros(env.action_space.n, dtype=bool)
-                if transition_done
+                if episode_done
                 else np.asarray(env.action_masks(), dtype=bool)
             )
 
@@ -102,7 +67,7 @@ def prefill_buffer(
                 action,
                 shaped_reward,
                 next_obs,
-                transition_done,
+                episode_done,
                 next_action_mask,
                 state_discrete,
                 next_state_discrete,
@@ -153,11 +118,6 @@ def _run_episode(
     total_return = 0.0
     total_loss = 0.0
     loss_count = 0
-    total_nz_reward_frac = 0.0
-    total_terminal_frac = 0.0
-    total_td_abs_zero = 0.0
-    total_td_abs_pos = 0.0
-    total_td_abs_neg = 0.0
 
     for step in range(max_steps):
         action_mask = env.action_masks()
@@ -169,11 +129,10 @@ def _run_episode(
             next_obs_raw, agent.obs_type, dual_obs
         )
 
-        episode_done = _is_episode_done(terminated, truncated)
-        transition_done = _transition_done(terminated, truncated)
+        episode_done = terminated or truncated
         next_action_mask = (
             np.zeros(env.action_space.n, dtype=bool)
-            if transition_done
+            if episode_done
             else np.asarray(env.action_masks(), dtype=bool)
         )
 
@@ -182,7 +141,7 @@ def _run_episode(
             action,
             shaped_reward,
             next_obs,
-            transition_done,
+            episode_done,
             next_action_mask,
             state_discrete,
             next_state_discrete,
@@ -191,17 +150,15 @@ def _run_episode(
         )
 
         # Optimize every train_freq steps (mirrors SB3 train_freq logic)
-        if agent.steps_done % train_freq == 0 and len(agent.replay_buffer) >= agent.batch_size:
+        if (
+            agent.steps_done % train_freq == 0
+            and len(agent.replay_buffer) >= agent.batch_size
+        ):
             for _ in range(gradient_steps):
                 loss = agent.optimize()
                 if loss > 0:
                     total_loss += loss
                     loss_count += 1
-                    total_nz_reward_frac += agent.last_optimize_stats.get("non_zero_reward_frac", 0.0)
-                    total_terminal_frac += agent.last_optimize_stats.get("terminal_frac", 0.0)
-                    total_td_abs_zero += agent.last_optimize_stats.get("td_abs_zero", 0.0)
-                    total_td_abs_pos += agent.last_optimize_stats.get("td_abs_pos", 0.0)
-                    total_td_abs_neg += agent.last_optimize_stats.get("td_abs_neg", 0.0)
         # Keep target-update cadence tied to environment steps (SB3-style).
         agent.update_target_net()
 
@@ -215,14 +172,7 @@ def _run_episode(
 
     success = reward > 0  # +100 for solved
     avg_loss = total_loss / max(loss_count, 1)
-    avg_opt_stats = {
-        "non_zero_reward_frac": total_nz_reward_frac / max(loss_count, 1),
-        "terminal_frac": total_terminal_frac / max(loss_count, 1),
-        "td_abs_zero": total_td_abs_zero / max(loss_count, 1),
-        "td_abs_pos": total_td_abs_pos / max(loss_count, 1),
-        "td_abs_neg": total_td_abs_neg / max(loss_count, 1),
-    }
-    return total_return, step + 1, success, avg_loss, avg_opt_stats
+    return total_return, step + 1, success, avg_loss
 
 
 def train_single(
@@ -276,10 +226,12 @@ def train_single(
 
     learning_starts = int(cfg.agent.get("learning_starts", 100))
     if learning_starts > 0:
-        prefill_buffer(agent, env, learning_starts, max_steps, dual_obs, reward_step_penalty)
+        prefill_buffer(
+            agent, env, learning_starts, max_steps, dual_obs, reward_step_penalty
+        )
 
     for episode in range(1, total_episodes + 1):
-        total_return, length, success, avg_loss, opt_stats = _run_episode(
+        total_return, length, success, avg_loss = _run_episode(
             agent,
             env,
             max_steps,
@@ -296,11 +248,6 @@ def train_single(
             success=success,
             epsilon=agent.current_epsilon,
             loss=avg_loss,
-            non_zero_reward_frac=opt_stats.get("non_zero_reward_frac", 0.0),
-            terminal_frac=opt_stats.get("terminal_frac", 0.0),
-            td_abs_zero=opt_stats.get("td_abs_zero", 0.0),
-            td_abs_pos=opt_stats.get("td_abs_pos", 0.0),
-            td_abs_neg=opt_stats.get("td_abs_neg", 0.0),
         )
 
         # Periodic logging
@@ -310,9 +257,7 @@ def train_single(
                 f"Episode {episode}/{total_episodes} | "
                 f"Avg Return: {stats.get('avg_return', 0):.3f} | "
                 # f"Win Rate: {stats.get('win_rate', 0):.3f} | "
-                f"Avg Loss: {stats.get('avg_loss', 0):.3f} | "
-                f"NZRewardFrac: {stats.get('avg_non_zero_reward_frac', 0):.3f} | "
-                f"TermFrac: {stats.get('avg_terminal_frac', 0):.3f} | "
+                f"Avg Loss: {stats.get('avg_loss', 0):.5f} | "
                 f"Avg Length: {stats.get('avg_length', 0):.0f} | "
                 f"Epsilon: {agent.current_epsilon:.3f} | "
                 f"Buffer: {len(agent.replay_buffer)}"

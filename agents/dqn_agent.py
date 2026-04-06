@@ -99,12 +99,12 @@ class DQNAgent:
                 else:
                     net_arch = list(getattr(a_cfg, "hidden_sizes", [64, 64]))
             hidden_sizes = list(net_arch)
-            self.policy_net = MLPNetwork(
-                input_dim, num_actions, hidden_sizes
-            ).to(self.device)
-            self.target_net = MLPNetwork(
-                input_dim, num_actions, hidden_sizes
-            ).to(self.device)
+            self.policy_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
+                self.device
+            )
+            self.target_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
+                self.device
+            )
         elif a_cfg.type == "cnn":
             c, h, w = obs_shape
             self.policy_net = CNNNetwork(
@@ -136,7 +136,9 @@ class DQNAgent:
         for p in self.target_net.parameters():
             p.requires_grad = False
 
-        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True)
+        self.optimizer = optim.AdamW(
+            self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True
+        )
         self.loss_fn = nn.SmoothL1Loss()
 
         self.replay_buffer = ReplayBuffer(self.buffer_size)
@@ -146,9 +148,6 @@ class DQNAgent:
             "loss": 0.0,
             "non_zero_reward_frac": 0.0,
             "terminal_frac": 0.0,
-            "td_abs_zero": 0.0,
-            "td_abs_pos": 0.0,
-            "td_abs_neg": 0.0,
         }
 
     def select_action(
@@ -174,7 +173,6 @@ class DQNAgent:
             int: Selected discrete action index.
         """
         # Exponential decay:
-        # eps = eps_end + (eps_start - eps_end) * exp(-steps_done / eps_decay)
         eps = self.exploration_final_eps + (
             self.exploration_initial_eps - self.exploration_final_eps
         ) * math.exp(-1.0 * self.steps_done / self.exploration_decay)
@@ -191,17 +189,55 @@ class DQNAgent:
             return int(np.random.randint(self.num_actions))
 
         # Greedy action with masking
-        with torch.no_grad():
-            state_t = torch.as_tensor(
-                state, dtype=torch.float32, device=self.device
-            ).unsqueeze(0)
-            q_values = self.policy_net(state_t)
-            if action_mask is not None:
-                mask_t = torch.as_tensor(
-                    action_mask, dtype=torch.bool, device=self.device
-                )
-                q_values[0][~mask_t] = float("-inf")
-            return int(q_values.argmax(dim=1).item())
+        state_t = torch.as_tensor(
+            state, dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        q_values = self.policy_net(state_t)
+        if action_mask is not None:
+            mask_t = torch.as_tensor(
+                action_mask, dtype=torch.bool, device=self.device
+            )
+            q_values[0][~mask_t] = float("-inf")
+        return int(q_values.argmax(dim=1).item())
+
+    @torch.no_grad()
+    def _td_target(self, reward: torch.Tensor, next_value: torch.Tensor, done: torch.Tensor) -> torch.Tensor:
+        """Compute TD Target.
+
+        Computes the TD target for a batch of transitions.
+
+        Args:
+            reward (torch.Tensor): Tensor of shape ``(batch_size,)``
+            containing rewards.
+            next_value (torch.Tensor): Tensor of shape ``(batch_size,)``
+            containing bootstrap values for the next states.
+            done (torch.Tensor): Boolean tensor of shape ``(batch_size,)``
+            indicating terminal transitions.
+        Returns:
+            torch.Tensor: TD target values with shape ``(batch_size,)``.
+        """
+        next_state_values = self.policy_net(next_value)
+        best_actions = torch.argmax(next_state_values, dim=1)
+        next_value = self.target_net(next_value)[np.arange(0, self.batch_size), best_actions]
+        return (
+            next_value * self.gamma * (1 - done.float()) + reward 
+        ).float()
+
+    def _td_estimate(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        """Compute TD Estimate.
+
+        Computes the TD estimate for a batch of transitions.
+
+        Args:
+            state (torch.Tensor): Tensor of shape ``(batch_size, *obs_shape)``
+            containing batch of states.
+            action (torch.Tensor): Tensor of shape ``(batch_size,)`` containing
+            action indices.
+        Returns:
+            torch.Tensor: TD estimate values with shape ``(batch_size,)``.
+        """
+        state_action_values = self.policy_net(state)[np.arange(0, self.batch_size), action]
+        return state_action_values.float()
 
     def optimize(self) -> float:
         """Optimize Policy Network.
@@ -220,86 +256,28 @@ class DQNAgent:
             self.last_optimize_stats = {
                 "loss": 0.0,
                 "non_zero_reward_frac": 0.0,
-                "terminal_frac": 0.0,
-                "td_abs_zero": 0.0,
-                "td_abs_pos": 0.0,
-                "td_abs_neg": 0.0,
+                "terminal_frac": 0.0
             }
             return 0.0
 
         batch = self.replay_buffer.sample(self.batch_size, self.device)
         states = batch["states"]
-        actions = batch["actions"]
-        rewards = batch["rewards"]
+        actions = batch["actions"].squeeze()
+        rewards = batch["rewards"].squeeze()
         next_states = batch["next_states"]
-        dones = batch["dones"]
-        next_action_masks = batch.get("next_action_masks")
-
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
-        non_final_mask = ~dones.squeeze(1)
-        non_final_next_states = next_states[non_final_mask]
+        dones = batch["dones"].squeeze()
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
         # for each batch state according to policy_net
-        state_action_values = self.policy_net(states).gather(1, actions)
+        state_action_values = self._td_estimate(states, actions)
 
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
         # on the "older" target_net; selecting their best reward with max(1).values
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
-        next_state_values = torch.zeros((self.batch_size, 1), device=self.device)
-        with torch.no_grad():
-            if non_final_mask.any():
-                target_q_values = self.target_net(non_final_next_states)
-                if next_action_masks is not None:
-                    non_final_next_action_masks = next_action_masks[non_final_mask]
-                    non_final_indices = non_final_mask.nonzero(as_tuple=False).squeeze(1)
-                    valid_any = non_final_next_action_masks.any(dim=1)
-
-                    # Keep default 0.0 bootstrap for rows with no valid next actions.
-                    # DOUBLE DQN — policy_net selects, target_net evaluates (unbiased)
-                    if valid_any.any():
-                        policy_q = self.policy_net(non_final_next_states)
-                        policy_q_masked = policy_q[valid_any].masked_fill(~non_final_next_action_masks[valid_any], float("-inf"))
-                        # masked_q_values = target_q_values[valid_any].masked_fill(
-                        #     ~non_final_next_action_masks[valid_any], float("-inf")
-                        # )
-                        valid_indices = non_final_indices[valid_any]
-                        # next_state_values[valid_indices] = masked_q_values.max(1).values.unsqueeze(1)
-                        best_actions = policy_q_masked.argmax(1, keepdim=True)
-                        next_state_values[valid_indices] = target_q_values[valid_any].gather(1, best_actions)
-                else:
-                    next_state_values[non_final_mask] = target_q_values.max(1).values.unsqueeze(1)
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * self.gamma) + rewards
-
+        next_state_values = self._td_target(rewards, next_states, dones)
         # Compute Huber loss
-        loss = self.loss_fn(state_action_values, expected_state_action_values)
-
-        td_abs_error = (state_action_values - expected_state_action_values).abs().detach()
-        zero_mask = rewards == 0
-        pos_mask = rewards > 0
-        neg_mask = rewards < 0
-
-        def _masked_mean(values: torch.Tensor, mask: torch.Tensor) -> float:
-            """Compute Masked Mean.
-
-            Computes the mean of values where the boolean mask is true.
-
-            Args:
-                values (torch.Tensor): Tensor containing values to aggregate.
-                mask (torch.Tensor): Boolean tensor selecting valid entries.
-
-            Returns:
-                float: Mean over selected entries, or ``0.0`` if no entries are
-                selected.
-            """
-            if mask.any():
-                return float(values[mask].mean().item())
-            return 0.0
+        loss = self.loss_fn(state_action_values, next_state_values)
 
         # Optimize the model
         self.optimizer.zero_grad()
@@ -312,9 +290,6 @@ class DQNAgent:
             "loss": float(loss.item()),
             "non_zero_reward_frac": float((rewards.abs() > 0).float().mean().item()),
             "terminal_frac": float(dones.float().mean().item()),
-            "td_abs_zero": _masked_mean(td_abs_error, zero_mask),
-            "td_abs_pos": _masked_mean(td_abs_error, pos_mask),
-            "td_abs_neg": _masked_mean(td_abs_error, neg_mask),
         }
 
         return loss.item()
@@ -334,7 +309,10 @@ class DQNAgent:
         self._n_calls += 1
         if self._n_calls % self.target_update_interval != 0:
             return
-        polyak_update(self.policy_net.parameters(), self.target_net.parameters(), self.tau)
+        # self.target_net.load_state_dict(self.policy_net.state_dict())
+        polyak_update(
+            self.policy_net.parameters(), self.target_net.parameters(), self.tau
+        )
 
     # --- Dyad support methods ---
 

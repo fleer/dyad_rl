@@ -6,7 +6,6 @@ from gymnasium.spaces.utils import flatten_space
 _MAX_LINEAR_SPAN = 1024.0
 _FALLBACK_LOG_SCALE = 256.0
 
-
 def normalize_rgb(obs: np.ndarray) -> np.ndarray:
     """Normalize RGB Observation.
 
@@ -206,14 +205,16 @@ def process_obs(
     """
     if dual_obs:
         state_discrete = np.asarray(obs["puzzle_state"], dtype=np.float32)
-        state_rgb = obs["pixels"]
+        state_rgb = normalize_rgb(obs["pixels"])
         if agent_obs_type == "rgb":
-            agent_obs = normalize_rgb(state_rgb)
+            agent_obs = state_rgb
         else:
             agent_obs = state_discrete
         return agent_obs, state_discrete, state_rgb
 
     if agent_obs_type == "rgb":
-        return normalize_rgb(obs["pixels"]), None, None
+        state_rgb = normalize_rgb(obs)
+        return state_rgb, None, None
 
-    return np.asarray(obs, dtype=np.float32), None, None
+    state_discrete = np.asarray(obs, dtype=np.float32)
+    return state_discrete, None, None

@@ -82,8 +82,10 @@ def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, .
     else:
         # For puzzle_state (or dual), get the flat discrete shape
         obs_space = env.unwrapped.observation_space
-        if "puzzle_state" in obs_space.spaces:
-            return obs_space["puzzle_state"].shape
+        print(f"Full observation space: {obs_space}")
+        # TODO: This should be rewritten
+        #if "puzzle_state" in obs_space.spaces:
+        #    return obs_space["puzzle_state"].shape
         return env.observation_space.shape
 
 
