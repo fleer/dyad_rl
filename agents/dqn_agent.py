@@ -91,13 +91,6 @@ class DQNAgent:
             input_dim = int(np.prod(obs_shape))
             # Priority: net_arch (SB3 naming) → hidden_size+num_layers (sweep compat) → hidden_sizes (legacy)
             net_arch = getattr(a_cfg, "net_arch", None)
-            if net_arch is None:
-                hidden_size = getattr(a_cfg, "hidden_size", None)
-                num_layers = getattr(a_cfg, "num_layers", None)
-                if hidden_size is not None and num_layers is not None:
-                    net_arch = [int(hidden_size)] * int(num_layers)
-                else:
-                    net_arch = list(getattr(a_cfg, "hidden_sizes", [64, 64]))
             hidden_sizes = list(net_arch)
             self.policy_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
                 self.device

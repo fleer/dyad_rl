@@ -18,11 +18,6 @@ Usage:
 
     # Masked-random baseline only
     python experiment.py +experiment=baseline_mlp mode=baseline experiment_name=baseline_mlp
-
-    # Optuna hyperparameter sweep (MLP / CNN / dyad)
-    python experiment.py --multirun --config-name=sweep_mlp
-    python experiment.py --multirun --config-name=sweep_cnn
-    python experiment.py --multirun --config-name=sweep_dyad
 """
 
 import logging

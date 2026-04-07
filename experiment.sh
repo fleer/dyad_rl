@@ -31,7 +31,7 @@
 #
 # DEPENDENCIES
 # ------------
-#   • Python ≥ 3.10 (with hydra-core, torch, gymnasium, pygame, optuna, omegaconf)
+#   • Python ≥ 3.10 (with hydra-core, torch, gymnasium, pygame, omegaconf)
 #   • Compiled puzzle C libraries under puzzle_env/rlp/lib/
 #   • Run install.sh once before using this script
 #
@@ -73,12 +73,6 @@ EXTRA_ARGS="${EXTRA_ARGS:-}"
 #     SKIP_3X3=1 bash experiment.sh
 SKIP_3X3="${SKIP_3X3:-0}"
 
-# SKIP_SWEEPS
-#   Set to "0" to also run the Optuna hyperparameter sweeps before training.
-#   Sweeps run 50 Optuna trials each and can take many hours.
-#     SKIP_SWEEPS=0 bash experiment.sh
-SKIP_SWEEPS="${SKIP_SWEEPS:-1}"
-
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 log() {
@@ -106,66 +100,6 @@ run_exp() {
     "$PYTHON" experiment.py "$@" $EXTRA_ARGS
     log "Finished: $desc"
 }
-
-# =============================================================================
-# SECTION 0 — Hyperparameter Sweeps (optional, off by default)
-# =============================================================================
-#
-# The Optuna sweeps perform automated hyperparameter search BEFORE the main
-# experiments. Each sweep runs up to 50 trials using the TPE sampler and
-# maximises the best evaluation win rate over 2 000 short training episodes.
-#
-# After a sweep completes, inspect multirun/<date>/<time>/optimization_results.yaml
-# and update config/agent/mlp.yaml, config/agent/cnn.yaml, or
-# config/experiment/dyad.yaml with the best-found values before running the
-# main experiments.
-#
-# Sweep search spaces (see config/sweep_*.yaml for full details):
-#
-#   sweep_mlp  — searches: learning_rate, gamma, batch_size, hidden_size,
-#                           num_layers, tau, buffer_size
-#
-#   sweep_cnn  — same as MLP plus: fc_hidden (FC layer width after conv stack)
-#
-#   sweep_dyad — independent agent_a / agent_b params plus:
-#                training.share_interval ∈ {10, 25, 50, 100}
-#                training.rating_threshold ∈ [-1.0, 1.0]
-#
-# HOW TO MODIFY:
-#   • Change trial count:   add `hydra.sweeper.n_trials=20`
-#   • Change env target:    add `env=netslide_3x3`
-#   • Run in parallel (N jobs): add `hydra.sweeper.n_jobs=4`
-#   • Resume:               Optuna stores results in SQLite; set
-#                           `hydra.sweeper.storage=sqlite:///sweep.db`
-
-#if [ "${SKIP_SWEEPS}" = "0" ]; then
-#
-#    # ── Sweep 1: MLP baseline ─────────────────────────────────────────────────
-#    # Finds optimal DQN hyperparameters for the MLP agent on discrete state.
-#    # Results saved to multirun/...
-#    run_exp "Optuna sweep — MLP hyperparameters" \
-#        --multirun \
-#        --config-name=sweep_mlp
-#
-#    # ── Sweep 2: CNN baseline ─────────────────────────────────────────────────
-#    # Same as above but for the CNN agent on RGB pixels. Includes fc_hidden in
-#    # the search space since the fully-connected head width matters more for
-#    # pixel-based observations.
-#    run_exp "Optuna sweep — CNN hyperparameters" \
-#        --multirun \
-#        --config-name=sweep_cnn
-#
-#    # ── Sweep 3: Dyad configuration ───────────────────────────────────────────
-#    # Searches over independent agent_a / agent_b hyperparameters and the
-#    # dyad-specific sharing parameters (share_interval, rating_threshold).
-#    # The rating_threshold controls how "surprising" a transition must be to be
-#    # accepted into the partner's replay buffer (0.0 = accept anything better
-#    # than expected; positive values are more selective).
-#    run_exp "Optuna sweep — Dyad sharing hyperparameters" \
-#        --multirun \
-#        --config-name=sweep_dyad
-#
-#fi
 
 # =============================================================================
 # SECTION 1 — Experiment 1: Baseline MLP (Discrete State)
