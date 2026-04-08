@@ -347,21 +347,40 @@ Tracked during training and saved to `results/<experiment_name>/`:
 
 ## Plotting Results
 
-After running experiments, generate comparison plots across all three experiment variants using the standalone plotting script:
+After running experiments, generate comparison plots from any discovered result directories using the standalone plotting script:
 
 ```bash
 python plot_results.py
 ```
 
-This script loads training CSVs and evaluation JSONs from the results directories and generates:
+Useful options:
+
+```bash
+# List available experiment names discovered under results/
+python plot_results.py --list-experiments
+
+# Compare only a selected subset of experiments
+python plot_results.py --experiments exp1_mlp_samegame_2x3c3s2 exp2_mlp_samegame_2x3c3s2
+
+# Write plots to a custom output root instead of results/visualizations/
+python plot_results.py --output-dir comparison_plots
+```
+
+The script scans `results/<experiment_name>/` directories, automatically matches `*_training.csv` files with their corresponding `*_eval.json` files, and compares an arbitrary number of selected experiments as long as they follow that schema.
+
+It generates:
 
 - **Training Return curves** (`training_return.png`) — Smoothed total reward over episodes for each experiment
 - **Training Win Rate curves** (`training_win_rate.png`) — Smoothed success rate over episodes
+- **Training Episode Length comparison** (`training_episode_length_comparison.png`) — Smoothed episode length trajectories
+- **Training Loss comparison** (`training_loss_comparison.png`) — Smoothed training loss trajectories when available
 - **Evaluation Win Rate comparison** (`eval_comparison.png`) — Evaluation checkpoints with uncertainty bands (SEM) for each agent
+- **Evaluation Episode Length comparison** (`eval_length_comparison.png`) — Evaluation episode-length curves across checkpoints
 
-Plots are saved separately for each puzzle size:
-- `results/visualizations/2x3/` — Plots for netslide 2x3b1
-- `results/visualizations/3x3/` — Plots for netslide 3x3b1
+Plots are grouped by inferred puzzle size, with one subdirectory per board size under the chosen output root. With the default settings, for example:
+- `results/visualizations/2x3/` — Plots for netslide 2x3b1 comparisons
+- `results/visualizations/3x3/` — Plots for netslide 3x3b1 comparisons
+- `comparison_plots/2x3/` — Same output structure when `--output-dir comparison_plots` is used
 
 The evaluation plots include shaded uncertainty bands around the win-rate curves, reflecting the standard error of the mean (SEM) computed during each evaluation run across multiple episodes.
 
