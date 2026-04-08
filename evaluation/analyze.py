@@ -171,6 +171,60 @@ def plot_training_loss_curves(
     plt.close(fig)
 
 
+def plot_episode_length_curves(
+    experiments: dict[str, str],
+    output_dir: str,
+    window: int = 100,
+    filename: str = "training_episode_length.png",
+) -> None:
+    """Plot Episode Length Curves.
+
+    Plots and saves per-episode length trajectories from training CSV files.
+
+    Args:
+        experiments (dict[str, str]): Mapping of experiment names to training
+            CSV paths.
+        output_dir (str): Directory to save output plots.
+        window (int): Moving-average window size.
+        filename (str): Output image filename.
+
+    Returns:
+        None: Plot image file is written to disk.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    plotted = 0
+
+    for name, csv_path in experiments.items():
+        data = load_training_csv(csv_path)
+        episodes = np.asarray(data.get("episode", []), dtype=float)
+        lengths = np.asarray(data.get("length", []), dtype=float)
+
+        if len(episodes) == 0 or len(lengths) == 0:
+            continue
+
+        if len(lengths) >= window:
+            lengths_smooth = smooth(lengths.tolist(), window)
+            ax.plot(episodes[window - 1 :], lengths_smooth, label=name, alpha=0.85)
+        else:
+            ax.plot(episodes, lengths, label=f"{name} (unsmoothed)", alpha=0.65)
+        plotted += 1
+
+    if plotted == 0:
+        plt.close(fig)
+        return
+
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Episode Length")
+    ax.set_title("Training Episode Length")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, filename), dpi=150)
+    plt.close(fig)
+
+
 def plot_eval_comparison(
     experiments: dict[str, str],
     output_dir: str,
@@ -210,4 +264,49 @@ def plot_eval_comparison(
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "eval_comparison.png"), dpi=150)
+    plt.close()
+
+
+def plot_eval_length_comparison(
+    experiments: dict[str, str],
+    output_dir: str,
+    filename: str = "eval_length_comparison.png",
+) -> None:
+    """Plot Evaluation Length Comparison.
+
+    Plots and saves evaluation average episode-length trajectories for multiple
+    experiments.
+
+    Args:
+        experiments (dict[str, str]): Mapping of experiment names to evaluation
+            JSON paths.
+        output_dir (str): Directory to save output plot.
+        filename (str): Output image filename.
+
+    Returns:
+        None: Plot image file is written to disk.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+
+    for name, json_path in experiments.items():
+        evals = load_eval_json(json_path)
+        episodes = [e["episode"] for e in evals]
+        avg_lengths = [float(e["avg_length"]) for e in evals]
+        sem_lengths = [float(e.get("sem_length", 0.0)) for e in evals]
+        line = ax.plot(episodes, avg_lengths, marker="o", label=name, alpha=0.85)[0]
+        color = line.get_color()
+        lower = np.clip(np.array(avg_lengths) - np.array(sem_lengths), 0.0, None)
+        upper = np.array(avg_lengths) + np.array(sem_lengths)
+        ax.fill_between(episodes, lower, upper, color=color, alpha=0.18)
+
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Average Episode Length")
+    ax.set_title("Evaluation Episode Length")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, filename), dpi=150)
     plt.close()

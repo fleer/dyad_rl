@@ -230,7 +230,36 @@ def train_single(
             agent, env, learning_starts, max_steps, dual_obs, reward_step_penalty
         )
 
+    eval_result = evaluate(
+        agent,
+        env,
+        n_episodes=eval_episodes,
+        max_steps=max_steps,
+        reward_step_penalty=reward_step_penalty,
+    )
+    eval_record = EvalRecord(
+        episode=0,
+        avg_return=eval_result["avg_return"],
+        sem_return=eval_result["sem_return"],
+        win_rate=eval_result["win_rate"],
+        sem_win_rate=eval_result["sem_win_rate"],
+        avg_length=eval_result["avg_length"],
+        sem_length=eval_result["sem_length"],
+        avg_success_length=eval_result["avg_success_length"],
+        sem_success_length=eval_result["sem_success_length"],
+        std_length=eval_result["std_length"],
+    )
+    logger.log_eval(eval_record)
+    log.info(
+        f"  EVAL @ {0}: Win Rate={eval_result['win_rate']:.3f} | "
+        f"Avg Return={eval_result['avg_return']:.1f} | "
+        f"Avg Length={eval_result['avg_length']:.0f} | "
+        f"Delta WR={eval_result['win_rate'] - baseline_result['win_rate']:+.3f} | "
+        f"Delta Ret={eval_result['avg_return'] - baseline_result['avg_return']:+.1f}"
+    )
+
     for episode in range(1, total_episodes + 1):
+
         total_return, length, success, avg_loss = _run_episode(
             agent,
             env,
@@ -298,7 +327,6 @@ def train_single(
                 best_win_rate = eval_result["win_rate"]
                 agent.save(os.path.join(checkpoint_dir, "best_model.pt"))
                 log.info(f"  New best model saved (win_rate={best_win_rate:.3f})")
-
         # Periodic checkpoint
         if episode % checkpoint_interval == 0:
             agent.save(os.path.join(checkpoint_dir, f"checkpoint_{episode}.pt"))
