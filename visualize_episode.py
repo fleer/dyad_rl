@@ -140,15 +140,21 @@ def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
 
     env_cfg_path = config_dir / "env" / "netslide_2x3.yaml"
     if env_cfg_path.exists():
-        cfg = OmegaConf.merge(cfg, OmegaConf.create({"env": OmegaConf.load(env_cfg_path)}))
+        cfg = OmegaConf.merge(
+            cfg, OmegaConf.create({"env": OmegaConf.load(env_cfg_path)})
+        )
 
     agent_cfg_path = config_dir / "agent" / f"{inferred_agent}.yaml"
     if agent_cfg_path.exists():
-        cfg = OmegaConf.merge(cfg, OmegaConf.create({"agent": OmegaConf.load(agent_cfg_path)}))
+        cfg = OmegaConf.merge(
+            cfg, OmegaConf.create({"agent": OmegaConf.load(agent_cfg_path)})
+        )
 
     training_cfg_path = config_dir / "training" / "dqn.yaml"
     if training_cfg_path.exists():
-        cfg = OmegaConf.merge(cfg, OmegaConf.create({"training": OmegaConf.load(training_cfg_path)}))
+        cfg = OmegaConf.merge(
+            cfg, OmegaConf.create({"training": OmegaConf.load(training_cfg_path)})
+        )
 
     # Ensure visualization-safe settings.
     cfg.experiment_name = experiment_name
@@ -195,6 +201,7 @@ def create_env_for_visualization(cfg: DictConfig) -> gym.Env:
     return ActionMaskWrapper(env)
 
 
+# TODO: Infer from env.observation_space or agent type instead of hardcoding known sizes for specific puzzles
 def get_obs_shape_for_agent(cfg: DictConfig) -> tuple[int, ...]:
     """Get Agent Observation Shape.
 
@@ -217,9 +224,14 @@ def get_obs_shape_for_agent(cfg: DictConfig) -> tuple[int, ...]:
                 return (34,)  # Known size for netslide 2x3
             elif "3x3" in cfg.env.params:
                 return (46,)  # Known size for netslide 3x3
-        
+        if "samegame" in cfg.env.puzzle.lower():
+            if "2x3c3s2" in cfg.env.params:
+                return (43,)  # Known size for samegame 2x3c3s2
+
         # Fallback: Try to create a temp env (may crash with C backend)
-        log.warning("Could not infer obs shape, attempting to create temp environment...")
+        log.warning(
+            "Could not infer obs shape, attempting to create temp environment..."
+        )
         try:
             temp_env = gym.make(
                 "rlp/Puzzle-v0",
@@ -263,17 +275,17 @@ def load_agent(
     log.info("Building agent with config...")
     log.info(f"  Agent type: {cfg.agent.type}")
     log.info(f"  Obs type: {cfg.env.obs_type}")
-    
+
     obs_shape = get_obs_shape_for_agent(cfg)
     log.info(f"  Obs shape: {obs_shape}")
-    
+
     # If num_actions not provided, we'll need to infer it
     # For now, use a fixed value for netslide
     if num_actions is None:
         # Netslide typically has 5 actions
         num_actions = 5
         log.info(f"  Using inferred num_actions: {num_actions}")
-    
+
     log.info("Initializing agent...")
     agent = DQNAgent(
         obs_type=cfg.env.obs_type,
@@ -282,11 +294,13 @@ def load_agent(
         cfg=cfg,
         device=device,
     )
-    
+
     log.info("Agent initialized. Loading checkpoint...")
     log.info(f"  Checkpoint path: {checkpoint_path}")
     log.info(f"  File exists: {os.path.exists(checkpoint_path)}")
-    log.info(f"  File size: {os.path.getsize(checkpoint_path) if os.path.exists(checkpoint_path) else 'N/A'} bytes")
+    log.info(
+        f"  File size: {os.path.getsize(checkpoint_path) if os.path.exists(checkpoint_path) else 'N/A'} bytes"
+    )
 
     # Load the checkpoint
     try:
@@ -297,7 +311,9 @@ def load_agent(
         # Try to infer num_actions from checkpoint
         log.info("Attempting to auto-detect num_actions from checkpoint...")
         try:
-            checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+            checkpoint = torch.load(
+                checkpoint_path, map_location=device, weights_only=True
+            )
             policy_state = checkpoint["policy_net"]
 
             # Detect output layer generically from the highest indexed linear
@@ -305,10 +321,14 @@ def load_agent(
             weight_entries = [
                 (k, v)
                 for k, v in policy_state.items()
-                if "weight" in k and "bias" not in k and getattr(v, "dim", lambda: 0)() == 2
+                if "weight" in k
+                and "bias" not in k
+                and getattr(v, "dim", lambda: 0)() == 2
             ]
             if not weight_entries:
-                raise RuntimeError("Could not find any 2D weight tensors in checkpoint policy_net")
+                raise RuntimeError(
+                    "Could not find any 2D weight tensors in checkpoint policy_net"
+                )
 
             def _layer_index(key: str) -> int:
                 parts = key.split(".")
@@ -317,14 +337,16 @@ def load_agent(
                         return int(part)
                 return -1
 
-            last_layer_key, last_layer_weight = max(weight_entries, key=lambda kv: _layer_index(kv[0]))
+            last_layer_key, last_layer_weight = max(
+                weight_entries, key=lambda kv: _layer_index(kv[0])
+            )
             num_actions = int(last_layer_weight.shape[0])
             log.info(
                 "Auto-detected num_actions from checkpoint layer %s: %d",
                 last_layer_key,
                 num_actions,
             )
-            
+
             # Recreate agent with correct num_actions
             agent = DQNAgent(
                 obs_type=cfg.env.obs_type,
@@ -370,7 +392,7 @@ def visualize_episode(
         dict: Episode statistics including total return, steps, and success.
     """
     dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
-    
+
     if save_frames:
         os.makedirs(output_dir, exist_ok=True)
         log.info(f"Saving frames to {output_dir}/")
@@ -416,6 +438,7 @@ def visualize_episode(
             frame_path = os.path.join(output_dir, f"frame_{i:04d}.png")
             try:
                 from PIL import Image
+
                 img = Image.fromarray(frame.astype(np.uint8))
                 img.save(frame_path)
             except ImportError:
@@ -458,43 +481,55 @@ def create_mp4_from_frames(
         bool: ``True`` on successful video creation, else ``False``.
     """
     import shutil
-    
+
     # Check if ffmpeg is available
     if shutil.which("ffmpeg") is None:
-        log.error("ffmpeg not found. Install with: apt-get install ffmpeg (Ubuntu) or brew install ffmpeg (macOS)")
+        log.error(
+            "ffmpeg not found. Install with: apt-get install ffmpeg (Ubuntu) or brew install ffmpeg (macOS)"
+        )
         return False
-    
+
     # Check if frames directory exists and has frames
     if not os.path.exists(frames_dir):
         log.error(f"Frames directory not found: {frames_dir}")
         return False
-    
-    frame_files = sorted([f for f in os.listdir(frames_dir) if f.startswith("frame_") and f.endswith(".png")])
+
+    frame_files = sorted(
+        [
+            f
+            for f in os.listdir(frames_dir)
+            if f.startswith("frame_") and f.endswith(".png")
+        ]
+    )
     if not frame_files:
         log.error(f"No frame files found in {frames_dir}")
         return False
-    
+
     log.info(f"Creating MP4 video from {len(frame_files)} frames...")
     log.info(f"  Input frames: {frames_dir}/frame_*.png")
     log.info(f"  Output video: {output_path}")
     log.info(f"  Framerate: {framerate} fps")
-    
+
     # Build ffmpeg command
     input_pattern = os.path.join(frames_dir, "frame_%04d.png")
     cmd = [
         "ffmpeg",
-        "-framerate", str(framerate),
-        "-i", input_pattern,
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
+        "-framerate",
+        str(framerate),
+        "-i",
+        input_pattern,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
         "-y",  # Overwrite output file without asking
         output_path,
     ]
-    
+
     try:
         log.info(f"Running: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        
+
         if result.returncode == 0:
             log.info(f"Video created successfully: {output_path}")
             return True
@@ -579,15 +614,13 @@ def main():
         help="Video framerate in fps (default: 10, only used with --mp4-output)",
     )
     args = parser.parse_args()
-    
+
     # If mp4_output is specified, automatically enable frame saving
     if args.mp4_output is not None:
         args.save_frames = True
 
     # Set up logging
-    logging.basicConfig(
-        level=logging.INFO, format="%(name)s %(levelname)s %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
 
     # Validate checkpoint exists
     if not os.path.exists(args.checkpoint):
@@ -650,7 +683,9 @@ def main():
         )
         if success:
             log.info(f"Video saved to: {args.mp4_output}")
-            log.info(f"You can play it with: mpv {args.mp4_output} (or any video player)")
+            log.info(
+                f"You can play it with: mpv {args.mp4_output} (or any video player)"
+            )
         else:
             log.error("Failed to create MP4 video")
         shutil.rmtree(args.frames_dir)  # Clean up frames directory after video creation
