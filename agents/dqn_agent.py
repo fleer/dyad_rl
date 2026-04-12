@@ -21,7 +21,6 @@ class DQNAgent:
 
     def __init__(
         self,
-        obs_type: str,
         obs_shape: tuple[int, ...],
         num_actions: int,
         cfg: DictConfig,
@@ -34,8 +33,6 @@ class DQNAgent:
         exploration schedule for a DQN agent.
 
         Args:
-            obs_type (str): Observation modality name (for example, ``"mlp"``
-                or ``"cnn"``-compatible processing paths).
             obs_shape (tuple[int, ...]): Shape of the processed observation
                 expected by the policy network.
             num_actions (int): Number of discrete actions.
@@ -48,7 +45,6 @@ class DQNAgent:
         Returns:
             None: The constructor initializes the instance in place.
         """
-        self.obs_type = obs_type
         self.obs_shape = obs_shape
         self.num_actions = num_actions
         self.device = device or torch.device("cpu")
@@ -67,6 +63,7 @@ class DQNAgent:
         self.max_grad_norm = float(a_cfg.max_grad_norm)
         self.target_update_interval = int(a_cfg.target_update_interval)
         self._n_calls = 0
+        self.obs_type = a_cfg.obs_type
 
         # Build networks
         if a_cfg.type == "mlp":
@@ -109,8 +106,10 @@ class DQNAgent:
         for p in target_net.parameters():
             p.requires_grad = False
         # Compile networks with TorchDynamo for potential speedup (optional)
-        self.policy_net = torch.compile(policy_net, fullgraph=True)
-        self.target_net = torch.compile(target_net, fullgraph=True)
+        # self.policy_net = torch.compile(policy_net, fullgraph=True)
+        # self.target_net = torch.compile(target_net, fullgraph=True)
+        self.policy_net = policy_net
+        self.target_net = target_net
 
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -124,7 +123,7 @@ class DQNAgent:
         )
         self.loss_fn = nn.SmoothL1Loss()
 
-        self.replay_buffer = ReplayBuffer(self.buffer_size)
+        self.replay_buffer = ReplayBuffer(self.buffer_size, a_cfg.obs_type)
         self.steps_done = 0
         self.current_epsilon = self.exploration_initial_eps
         self.last_optimize_stats = {

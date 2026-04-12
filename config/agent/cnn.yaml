@@ -1,4 +1,5 @@
 type: cnn
+obs_type: rgb
 conv_channels:
   - 32
   - 64

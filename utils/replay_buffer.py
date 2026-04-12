@@ -24,18 +24,22 @@ Transition = namedtuple(
 class ReplayBuffer:
     """Fixed-size circular replay buffer storing transitions with both observation types."""
 
-    def __init__(self, capacity: int):
+    def __init__(self, capacity: int, observation_type: str | None = None) -> None:
         """Initialize Replay Buffer.
 
         Creates a fixed-size circular replay buffer.
 
         Args:
             capacity (int): Maximum number of stored transitions.
+            observation_type (str | None): Type of observation stored ("puzzle_state",
+                "rgb"). If None, no special handling is applied to next-action
+                masks during sampling.
 
         Returns:
             None: Buffer state is initialized in place.
         """
-        self.buffer = deque(maxlen=capacity) 
+        self.buffer = deque(maxlen=capacity)
+        self.observation_type = observation_type
 
     def push(
         self,
@@ -114,8 +118,19 @@ class ReplayBuffer:
         """
         batch = random.sample(self.buffer, batch_size)
 
+        raw_next_state_list = [t.next_state for t in batch]
+        raw_state_list = [t.state for t in batch]
+        if self.observation_type == "rgb":
+            # For RGB, stack along channel dimension
+            raw_state_list = [t.state_rgb for t in batch]
+            raw_next_state_list = [t.next_state_rgb for t in batch]
+        elif self.observation_type == "puzzle_state":
+            # For puzzle_state, stack along feature dimension
+            raw_state_list = [t.state_discrete for t in batch]
+            raw_next_state_list = [t.next_state_discrete for t in batch]
+
         states = torch.as_tensor(
-            np.array([t.state for t in batch]), dtype=torch.float32, device=device
+            np.array(raw_state_list), dtype=torch.float32, device=device
         )
         actions = torch.as_tensor(
             np.array([t.action for t in batch]), dtype=torch.long, device=device
@@ -124,7 +139,7 @@ class ReplayBuffer:
             np.array([t.reward for t in batch]), dtype=torch.float32, device=device
         ).unsqueeze(1)
         next_states = torch.as_tensor(
-            np.array([t.next_state for t in batch]), dtype=torch.float32, device=device
+            np.array(raw_next_state_list), dtype=torch.float32, device=device
         )
         dones = torch.as_tensor(
             np.array([t.done for t in batch]), dtype=torch.bool, device=device

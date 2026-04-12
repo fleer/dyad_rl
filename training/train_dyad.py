@@ -4,11 +4,16 @@ import os
 import gymnasium as gym
 import numpy as np
 from omegaconf import DictConfig
+from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from agents.dqn_agent import DQNAgent
 from utils.replay_buffer import Transition
 from utils.metrics import MetricsLogger, EvalRecord
-from evaluation.evaluate import evaluate, evaluate_masked_random, collect_eval_trajectory
+from evaluation.evaluate import (
+    evaluate,
+    collect_eval_trajectory,
+)
 from utils.obs_processing import normalize_rgb
 from training.train_single import _run_episode, prefill_buffer
 
@@ -79,11 +84,11 @@ def _share_experience(
         running_return = provider_trajectory[i]["reward"] + rater.gamma * running_return
         actual_returns[i] = running_return
 
-    # ATTENTION: This is the most critical part of the dyad learning algorithm. 
+    # ATTENTION: This is the most critical part of the dyad learning algorithm.
     # The choice of rating_threshold determines which transitions are considered valuable.
     # Accept transitions where rater's Q-value suggests some value
     # Rating = actual return - expected return; accept if rating >= threshold
-    # This means that the accepted transitions are those where the provider's outcome was better 
+    # This means that the accepted transitions are those where the provider's outcome was better
     # than what the rater expected, according to the rater's own value function.
     ratings = actual_returns - expected_returns
     accepted: list[Transition] = []
@@ -95,21 +100,25 @@ def _share_experience(
             if rater_next_s is not None and rater.obs_type == "rgb":
                 rater_next_s = normalize_rgb(rater_next_s)
             elif rater_next_s is None:
-                logging.error(f"Missing next observation for rating at index {i}, skipping transition")
+                logging.error(
+                    f"Missing next observation for rating at index {i}, skipping transition"
+                )
                 continue
 
-            accepted.append(Transition(
-                state=rater_states_arr[i],
-                action=step["action"],
-                reward=step["reward"],
-                next_state=rater_next_s,
-                done=step["done"],
-                next_action_mask=step.get("next_action_mask"),
-                state_discrete=step.get("state_discrete"),
-                next_state_discrete=step.get("next_state_discrete"),
-                state_rgb=step.get("state_rgb"),
-                next_state_rgb=step.get("next_state_rgb"),
-            ))
+            accepted.append(
+                Transition(
+                    state=rater_states_arr[i],
+                    action=step["action"],
+                    reward=step["reward"],
+                    next_state=rater_next_s,
+                    done=step["done"],
+                    next_action_mask=step.get("next_action_mask"),
+                    state_discrete=step.get("state_discrete"),
+                    next_state_discrete=step.get("next_state_discrete"),
+                    state_rgb=step.get("state_rgb"),
+                    next_state_rgb=step.get("next_state_rgb"),
+                )
+            )
 
     return accepted
 
@@ -160,9 +169,17 @@ def train_dyad(
     # Determine obs keys for cross-rating
     # Agent A rates Agent B's trajectory using A's observation format
     a_obs_key = "state_discrete" if agent_a.obs_type == "puzzle_state" else "state_rgb"
-    a_next_key = "next_state_discrete" if agent_a.obs_type == "puzzle_state" else "next_state_rgb"
+    a_next_key = (
+        "next_state_discrete"
+        if agent_a.obs_type == "puzzle_state"
+        else "next_state_rgb"
+    )
     b_obs_key = "state_discrete" if agent_b.obs_type == "puzzle_state" else "state_rgb"
-    b_next_key = "next_state_discrete" if agent_b.obs_type == "puzzle_state" else "next_state_rgb"
+    b_next_key = (
+        "next_state_discrete"
+        if agent_b.obs_type == "puzzle_state"
+        else "next_state_rgb"
+    )
 
     dir_a = os.path.join(checkpoint_dir, "agent_a")
     dir_b = os.path.join(checkpoint_dir, "agent_b")
@@ -173,80 +190,105 @@ def train_dyad(
     best_win_rate_b = -1.0
     total_shared_to_a = 0
     total_shared_to_b = 0
-    baseline_a = evaluate_masked_random(
-        env_a,
-        n_episodes=eval_episodes,
-        max_steps=max_steps,
-        reward_step_penalty=reward_step_penalty,
-    )
-    baseline_b = evaluate_masked_random(
-        env_b,
-        n_episodes=eval_episodes,
-        max_steps=max_steps,
-        reward_step_penalty=reward_step_penalty,
-    )
-    logger_a.log_baseline("masked_random", baseline_a, eval_episodes, max_steps)
-    logger_b.log_baseline("masked_random", baseline_b, eval_episodes, max_steps)
-    log.info(
-        "Masked-random baselines | "
-        f"Agent A env WR={baseline_a['win_rate']:.3f}, Ret={baseline_a['avg_return']:.1f} | "
-        f"Agent B env WR={baseline_b['win_rate']:.3f}, Ret={baseline_b['avg_return']:.1f}"
-    )
 
     learning_starts_a = int(_cfg_a.get("learning_starts", 100))
     learning_starts_b = int(_cfg_b.get("learning_starts", 100))
     if learning_starts_a > 0:
-        prefill_buffer(agent_a, env_a, learning_starts_a, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty)
+        prefill_buffer(
+            agent_a,
+            env_a,
+            learning_starts_a,
+            max_steps,
+            dual_obs=True,
+            reward_step_penalty=reward_step_penalty,
+        )
     if learning_starts_b > 0:
-        prefill_buffer(agent_b, env_b, learning_starts_b, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty)
-
-    for episode in range(1, total_episodes + 1):
-        # Train agent A for 1 episode
-        ret_a, len_a, suc_a, loss_a, opt_stats_a = _run_episode(agent_a, env_a, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty, train_freq=train_freq_a, gradient_steps=gradient_steps_a)
-        logger_a.log_episode(
-            episode=episode, total_return=ret_a, length=len_a, success=suc_a,
-            epsilon=agent_a.current_epsilon, loss=loss_a,
-            non_zero_reward_frac=opt_stats_a.get("non_zero_reward_frac", 0.0),
-            terminal_frac=opt_stats_a.get("terminal_frac", 0.0),
-            td_abs_zero=opt_stats_a.get("td_abs_zero", 0.0),
-            td_abs_pos=opt_stats_a.get("td_abs_pos", 0.0),
-            td_abs_neg=opt_stats_a.get("td_abs_neg", 0.0),
+        prefill_buffer(
+            agent_b,
+            env_b,
+            learning_starts_b,
+            max_steps,
+            dual_obs=True,
+            reward_step_penalty=reward_step_penalty,
         )
 
-        # Train agent B for 1 episode
-        ret_b, len_b, suc_b, loss_b, opt_stats_b = _run_episode(agent_b, env_b, max_steps, dual_obs=True, reward_step_penalty=reward_step_penalty, train_freq=train_freq_b, gradient_steps=gradient_steps_b)
-        logger_b.log_episode(
-            episode=episode, total_return=ret_b, length=len_b, success=suc_b,
-            epsilon=agent_b.current_epsilon, loss=loss_b,
-            non_zero_reward_frac=opt_stats_b.get("non_zero_reward_frac", 0.0),
-            terminal_frac=opt_stats_b.get("terminal_frac", 0.0),
-            td_abs_zero=opt_stats_b.get("td_abs_zero", 0.0),
-            td_abs_pos=opt_stats_b.get("td_abs_pos", 0.0),
-            td_abs_neg=opt_stats_b.get("td_abs_neg", 0.0),
-        )
+    with logging_redirect_tqdm(loggers=[logging.getLogger()]):
+        with tqdm(
+            range(1, total_episodes + 1),
+            desc="Dyad training",
+            unit="ep",
+            dynamic_ncols=True,
+            leave=True,
+            position=0,
+            mininterval=0.2,
+            smoothing=0.1,
+            colour="cyan",
+            bar_format=(
+                "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} "
+                "[{elapsed}<{remaining}, {rate_fmt}{postfix}]"
+            ),
+        ) as progress_bar:
+            for episode in progress_bar:
+                # Train agent A for 1 episode
+                ret_a, len_a, suc_a, loss_a = _run_episode(
+                    agent_a,
+                    env_a,
+                    max_steps,
+                    dual_obs=True,
+                    reward_step_penalty=reward_step_penalty,
+                    train_freq=train_freq_a,
+                    gradient_steps=gradient_steps_a,
+                )
+                logger_a.log_episode(
+                    episode=episode,
+                    total_return=ret_a,
+                    length=len_a,
+                    success=suc_a,
+                    epsilon=agent_a.current_epsilon,
+                    loss=loss_a,
+                )
 
-        # Experience sharing
-        if episode % share_interval == 0:
-            # Each agent runs 1 eval episode to generate a trajectory
-            # TODO: Range should be configurable and a parameter!!
-            ret_a = ret_b = 0.0
-            accepted_for_a: list[Transition] = []
-            accepted_for_b: list[Transition] = []
-            traj_a: list[dict] = []
-            traj_b: list[dict] = []
-            for _ in range(100):
-                if ret_a == 0:
+                # Train agent B for 1 episode
+                ret_b, len_b, suc_b, loss_b = _run_episode(
+                    agent_b,
+                    env_b,
+                    max_steps,
+                    dual_obs=True,
+                    reward_step_penalty=reward_step_penalty,
+                    train_freq=train_freq_b,
+                    gradient_steps=gradient_steps_b,
+                )
+                logger_b.log_episode(
+                    episode=episode,
+                    total_return=ret_b,
+                    length=len_b,
+                    success=suc_b,
+                    epsilon=agent_b.current_epsilon,
+                    loss=loss_b,
+                )
+
+                progress_bar.set_postfix(
+                    eps_a=f"{agent_a.current_epsilon:.3f}",
+                    eps_b=f"{agent_b.current_epsilon:.3f}",
+                )
+
+                # Experience sharing
+                if episode % share_interval == 0:
+                    # Each agent runs 1 eval episode to generate a trajectory
+                    # TODO: Range should be configurable and a parameter!!
+                    ret_a = ret_b = 0.0
+                    accepted_for_a: list[Transition] = []
+                    accepted_for_b: list[Transition] = []
+                    traj_a: list[dict] = []
+                    traj_b: list[dict] = []
                     traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
-                    ret_a = sum(step["reward"] for step in traj_a)
                     # Agent B rates Agent A's trajectory using B's own value function
                     accepted_for_b = _share_experience(
                         agent_b, traj_a, b_obs_key, b_next_key, rating_threshold
                     )
                     agent_b.add_to_buffer(accepted_for_b)
                     total_shared_to_b += len(accepted_for_b)
-                if ret_b == 0:
                     traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
-                    ret_b = sum(step["reward"] for step in traj_b)
                     # Agent A rates Agent B's trajectory using A's own value function
                     accepted_for_a = _share_experience(
                         agent_a, traj_b, a_obs_key, a_next_key, rating_threshold
@@ -254,88 +296,103 @@ def train_dyad(
                     # Add accepted transitions to replay buffers
                     agent_a.add_to_buffer(accepted_for_a)
                     total_shared_to_a += len(accepted_for_a)
-                if ret_a > 0 and ret_b > 0:
-                    break  # Both agents had successful trajectories, no need to keep sampling
-            
-            if ret_a == 0 and ret_b == 0:
-                log.info(f"  SHARE @ {episode}: Skipping sharing since both trajectories had non-positive return (A={ret_a:.1f}, B={ret_b:.1f})")
-                continue
+                    # for _ in range(100):
+                    #     if ret_a == 0:
+                    #         traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
+                    #         ret_a = sum(step["reward"] for step in traj_a)
+                    #         # Agent B rates Agent A's trajectory using B's own value function
+                    #         accepted_for_b = _share_experience(
+                    #             agent_b, traj_a, b_obs_key, b_next_key, rating_threshold
+                    #         )
+                    #         agent_b.add_to_buffer(accepted_for_b)
+                    #         total_shared_to_b += len(accepted_for_b)
+                    #     if ret_b == 0:
+                    #         traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
+                    #         ret_b = sum(step["reward"] for step in traj_b)
+                    #         # Agent A rates Agent B's trajectory using A's own value function
+                    #         accepted_for_a = _share_experience(
+                    #             agent_a, traj_b, a_obs_key, a_next_key, rating_threshold
+                    #         )
+                    #         # Add accepted transitions to replay buffers
+                    #         agent_a.add_to_buffer(accepted_for_a)
+                    #         total_shared_to_a += len(accepted_for_a)
+                    #     if ret_a > 0 and ret_b > 0:
+                    #         break  # Both agents had successful trajectories, no need to keep sampling
+                    #
+                    # if ret_a == 0 and ret_b == 0:
+                    #     log.info(
+                    #         f"  SHARE @ {episode}: Skipping sharing since both trajectories had non-positive return (A={ret_a:.1f}, B={ret_b:.1f})"
+                    #     )
+                    #     continue
 
-            
+                    log.info(
+                        f"  SHARE @ {episode}: "
+                        f"A accepted {len(accepted_for_a)}/{len(traj_b)} from B | "
+                        f"B accepted {len(accepted_for_b)}/{len(traj_a)} from A | "
+                        f"Total shared: A={total_shared_to_a}, B={total_shared_to_b}"
+                    )
 
+                # Periodic logging
+                if episode % log_interval == 0:
+                    stats_a = logger_a.get_recent_stats(window=log_interval)
+                    stats_b = logger_b.get_recent_stats(window=log_interval)
+                    log.info(
+                        f"Episode {episode}/{total_episodes}\n"
+                        f"  Agent A: Ret={stats_a.get('avg_return', 0):.3f} "
+                        f"WR={stats_a.get('win_rate', 0):.3f} "
+                        f"Len={stats_a.get('avg_length', 0):.0f} "
+                        f"Eps={agent_a.current_epsilon:.3f} "
+                        f"Buf={len(agent_a.replay_buffer)}\n"
+                        f"  Agent B: Ret={stats_b.get('avg_return', 0):.3f} "
+                        f"WR={stats_b.get('win_rate', 0):.3f} "
+                        f"Len={stats_b.get('avg_length', 0):.0f} "
+                        f"Eps={agent_b.current_epsilon:.3f} "
+                        f"Buf={len(agent_b.replay_buffer)}"
+                    )
 
+                # Periodic evaluation
+                if episode % eval_interval == 0:
+                    for name, agent, env, lgr, best_wr, ckdir in [
+                        ("A", agent_a, env_a, logger_a, best_win_rate_a, dir_a),
+                        ("B", agent_b, env_b, logger_b, best_win_rate_b, dir_b),
+                    ]:
+                        result = evaluate(
+                            agent,
+                            env,
+                            n_episodes=eval_episodes,
+                            max_steps=max_steps,
+                            reward_step_penalty=reward_step_penalty,
+                        )
+                        record = EvalRecord(
+                            episode=episode,
+                            avg_return=result["avg_return"],
+                            sem_return=result["sem_return"],
+                            win_rate=result["win_rate"],
+                            sem_win_rate=result["sem_win_rate"],
+                            avg_length=result["avg_length"],
+                            sem_length=result["sem_length"],
+                            avg_success_length=result["avg_success_length"],
+                            sem_success_length=result["sem_success_length"],
+                            std_length=result["std_length"],
+                        )
+                        lgr.log_eval(record)
+                        log.info(
+                            f"  EVAL Agent {name} @ {episode}: "
+                            f"WR={result['win_rate']:.3f} "
+                            f"Ret={result['avg_return']:.1f} "
+                            f"Len={result['avg_length']:.0f} "
+                        )
+                        if result["win_rate"] > best_wr:
+                            if name == "A":
+                                best_win_rate_a = result["win_rate"]
+                            else:
+                                best_win_rate_b = result["win_rate"]
+                            agent.save(os.path.join(ckdir, "best_model.pt"))
 
-            log.info(
-                f"  SHARE @ {episode}: "
-                f"A accepted {len(accepted_for_a)}/{len(traj_b)} from B | "
-                f"B accepted {len(accepted_for_b)}/{len(traj_a)} from A | "
-                f"Total shared: A={total_shared_to_a}, B={total_shared_to_b}"
-            )
-
-        # Periodic logging
-        if episode % log_interval == 0:
-            stats_a = logger_a.get_recent_stats(window=log_interval)
-            stats_b = logger_b.get_recent_stats(window=log_interval)
-            log.info(
-                f"Episode {episode}/{total_episodes}\n"
-                f"  Agent A: Ret={stats_a.get('avg_return', 0):.3f} "
-                f"WR={stats_a.get('win_rate', 0):.3f} "
-                f"Len={stats_a.get('avg_length', 0):.0f} "
-                f"Eps={agent_a.current_epsilon:.3f} "
-                f"Buf={len(agent_a.replay_buffer)}\n"
-                f"  Agent B: Ret={stats_b.get('avg_return', 0):.3f} "
-                f"WR={stats_b.get('win_rate', 0):.3f} "
-                f"Len={stats_b.get('avg_length', 0):.0f} "
-                f"Eps={agent_b.current_epsilon:.3f} "
-                f"Buf={len(agent_b.replay_buffer)}"
-            )
-
-        # Periodic evaluation
-        if episode % eval_interval == 0:
-            for name, agent, env, lgr, best_wr, ckdir in [
-                ("A", agent_a, env_a, logger_a, best_win_rate_a, dir_a),
-                ("B", agent_b, env_b, logger_b, best_win_rate_b, dir_b),
-            ]:
-                baseline = baseline_a if name == "A" else baseline_b
-                result = evaluate(
-                    agent,
-                    env,
-                    n_episodes=eval_episodes,
-                    max_steps=max_steps,
-                    reward_step_penalty=reward_step_penalty,
-                )
-                record = EvalRecord(
-                    episode=episode,
-                    avg_return=result["avg_return"],
-                    sem_return=result["sem_return"],
-                    win_rate=result["win_rate"],
-                    sem_win_rate=result["sem_win_rate"],
-                    avg_length=result["avg_length"],
-                    sem_length=result["sem_length"],
-                    avg_success_length=result["avg_success_length"],
-                    sem_success_length=result["sem_success_length"],
-                    std_length=result["std_length"],
-                )
-                lgr.log_eval(record)
-                log.info(
-                    f"  EVAL Agent {name} @ {episode}: "
-                    f"WR={result['win_rate']:.3f} "
-                    f"Ret={result['avg_return']:.1f} "
-                    f"Len={result['avg_length']:.0f} "
-                    f"DeltaWR={result['win_rate'] - baseline['win_rate']:+.3f} "
-                    f"DeltaRet={result['avg_return'] - baseline['avg_return']:+.1f}"
-                )
-                if result["win_rate"] > best_wr:
-                    if name == "A":
-                        best_win_rate_a = result["win_rate"]
-                    else:
-                        best_win_rate_b = result["win_rate"]
-                    agent.save(os.path.join(ckdir, "best_model.pt"))
-
-        # Periodic checkpoint
-        if episode % checkpoint_interval == 0:
-            agent_a.save(os.path.join(dir_a, f"checkpoint_{episode}.pt"))
-            agent_b.save(os.path.join(dir_b, f"checkpoint_{episode}.pt"))
+                # Periodic checkpoint
+                if episode % checkpoint_interval == 0:
+                    agent_a.save(os.path.join(dir_a, f"checkpoint_{episode}.pt"))
+                    agent_b.save(os.path.join(dir_b, f"checkpoint_{episode}.pt"))
 
     # Save final metrics and models
     logger_a.save_csv()

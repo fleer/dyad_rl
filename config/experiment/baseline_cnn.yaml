@@ -5,4 +5,4 @@ defaults:
   - override /training: dqn
 env:
   obs_type: rgb
-experiment_name: baseline_cnn
+experiment_name: exp_cnn_samegame2x3c3s2

@@ -5,8 +5,7 @@ from omegaconf import DictConfig
 
 import rlp  # noqa: F401 — registers rlp/Puzzle-v0
 from utils.obs_processing import (
-    NormalizeDualPuzzleStateWrapper,
-    NormalizePuzzleStateWrapper,
+    FlattenObservationDual,
 )
 
 
@@ -82,7 +81,6 @@ def make_dual_obs_env(cfg: DictConfig) -> gym.Env:
         include_cursor_in_state_info=cfg.env.include_cursor_in_state_info,
         params=cfg.env.params,
     )
-    # TODO: FlattenObservation needed for "puzzle_state" branch of dual obs!!!
-    env = NormalizeDualPuzzleStateWrapper(env)
+    env = FlattenObservationDual(env)
     env = ActionMaskWrapper(env)
     return env

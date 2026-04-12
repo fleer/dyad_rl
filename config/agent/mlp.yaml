@@ -1,4 +1,5 @@
 type: mlp
+obs_type: puzzle_state
 # Network architecture — mirrors SB3 policy_kwargs net_arch
 net_arch:
   - 128

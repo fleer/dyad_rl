@@ -1,10 +1,71 @@
 import gymnasium as gym
 import numpy as np
-from gymnasium.spaces.utils import flatten_space
+from gymnasium.wrappers import TransformObservation
+from gymnasium import spaces, Space
+from gymnasium.core import ActType, ObsType, WrapperObsType
 
 
-_MAX_LINEAR_SPAN = 1024.0
-_FALLBACK_LOG_SCALE = 256.0
+class FlattenObservationDual(
+    TransformObservation[WrapperObsType, ActType, ObsType],
+    gym.utils.RecordConstructorArgs,
+):
+    """Flattens the environment's observation space and each observation from ``reset`` and ``step`` functions.
+
+    A vector version of the wrapper exists :class:`gymnasium.wrappers.vector.FlattenObservation`.
+
+    Example:
+        >>> import gymnasium as gym
+        >>> from gymnasium.wrappers import FlattenObservation
+        >>> env = gym.make("CarRacing-v3")
+        >>> env.observation_space.shape
+        (96, 96, 3)
+        >>> env = FlattenObservation(env)
+        >>> env.observation_space.shape
+        (27648,)
+        >>> obs, _ = env.reset()
+        >>> obs.shape
+        (27648,)
+
+    Change logs:
+     * v0.15.0 - Initially added
+    """
+
+    def __init__(self, env: gym.Env[ObsType, ActType]):
+        """Constructor for any environment's observation space that implements ``spaces.utils.flatten_space`` and ``spaces.utils.flatten``.
+
+        Args:
+            env:  The environment to wrap
+        """
+
+        gym.utils.RecordConstructorArgs.__init__(self)
+        TransformObservation.__init__(
+            self,
+            env=env,
+            # func=lambda obs: spaces.utils.flatten(
+            #     env.observation_space["puzzle_state"], obs
+            # ),
+            func=lambda obs: {
+                "puzzle_state": spaces.utils.flatten(
+                    env.observation_space["puzzle_state"], obs["puzzle_state"]
+                ),
+                "pixels": obs["pixels"],
+            },
+            observation_space=spaces.utils.flatten_space(
+                env.observation_space["puzzle_state"]
+            ),
+        )
+
+    # def observation(obs_space: Space[ObsType], obs: ObsType) -> ObsType:
+    #     """Observation method for the wrapper.
+    #
+    #     Args:
+    #         obs: The observation to transform
+    #     """
+    #
+    #     return {
+    #         "puzzle_state": spaces.utils.flatten(obs_space["puzzle_state"], obs),
+    #         "pixels": obs["pixels"],
+    #     }
 
 
 def normalize_rgb(obs: np.ndarray) -> np.ndarray:
@@ -19,166 +80,6 @@ def normalize_rgb(obs: np.ndarray) -> np.ndarray:
         np.ndarray: Normalized float32 RGB array.
     """
     return obs.astype(np.float32) / 255.0
-
-
-def _normalize_puzzle_state_vector(
-    obs: np.ndarray,
-    low: np.ndarray,
-    high: np.ndarray,
-) -> np.ndarray:
-    """Normalize Puzzle-State Vector.
-
-    Normalizes puzzle-state features to a stable range using linear scaling when
-    bounds are well-behaved and logarithmic fallback otherwise.
-
-    Args:
-        obs (np.ndarray): Raw puzzle-state vector.
-        low (np.ndarray): Lower bounds per feature.
-        high (np.ndarray): Upper bounds per feature.
-
-    Returns:
-        np.ndarray: Normalized puzzle-state vector clipped to ``[-1, 1]``.
-    """
-    obs = np.asarray(obs, dtype=np.float32)
-    low = np.asarray(low, dtype=np.float32)
-    high = np.asarray(high, dtype=np.float32)
-
-    out = obs.copy()
-    spans = high - low
-    linear_mask = (
-        np.isfinite(low) & np.isfinite(high) & (spans > 0) & (spans <= _MAX_LINEAR_SPAN)
-    )
-
-    if np.any(linear_mask):
-        out[linear_mask] = (
-            2.0 * (obs[linear_mask] - low[linear_mask]) / spans[linear_mask]
-        ) - 1.0
-
-    fallback_mask = ~linear_mask
-    if np.any(fallback_mask):
-        non_negative_mask = fallback_mask & np.isfinite(low) & (low >= 0)
-        if np.any(non_negative_mask):
-            relative = np.maximum(obs[non_negative_mask] - low[non_negative_mask], 0.0)
-            out[non_negative_mask] = (
-                2.0 * np.log1p(relative) / np.log1p(_FALLBACK_LOG_SCALE)
-            ) - 1.0
-
-        signed_mask = fallback_mask & ~non_negative_mask
-        if np.any(signed_mask):
-            signed = np.sign(obs[signed_mask]) * np.log1p(np.abs(obs[signed_mask]))
-            out[signed_mask] = signed / np.log1p(_FALLBACK_LOG_SCALE)
-
-    return np.clip(out, -1.0, 1.0).astype(np.float32)
-
-
-def _get_puzzle_state_bounds(env: gym.Env) -> tuple[np.ndarray, np.ndarray]:
-    """Get Puzzle-State Bounds.
-
-    Retrieves flattened lower and upper bounds for puzzle-state features.
-
-    Args:
-        env (gym.Env): Environment providing observation spaces.
-
-    Returns:
-        tuple[np.ndarray, np.ndarray]: Lower and upper bounds arrays.
-    """
-    if hasattr(env.unwrapped, "_ps_obs_space"):
-        flat_space = flatten_space(env.unwrapped._ps_obs_space)
-        return (
-            np.asarray(flat_space.low, dtype=np.float32),
-            np.asarray(flat_space.high, dtype=np.float32),
-        )
-
-    obs_space = env.observation_space
-    return (
-        np.asarray(obs_space.low, dtype=np.float32),
-        np.asarray(obs_space.high, dtype=np.float32),
-    )
-
-
-class NormalizePuzzleStateWrapper(gym.ObservationWrapper):
-    """Normalize flattened puzzle-state observations into a stable float range."""
-
-    def __init__(self, env: gym.Env):
-        """Initialize Puzzle-State Normalization Wrapper.
-
-        Configures normalized observation bounds and output space.
-
-        Args:
-            env (gym.Env): Environment with flattened puzzle-state observations.
-
-        Returns:
-            None: Wrapper state is initialized in place.
-        """
-        super().__init__(env)
-        self._low, self._high = _get_puzzle_state_bounds(env)
-        self.observation_space = gym.spaces.Box(
-            low=-1.0,
-            high=1.0,
-            shape=env.observation_space.shape,
-            dtype=np.float32,
-        )
-
-    def observation(self, obs: np.ndarray) -> np.ndarray:
-        """Normalize Wrapped Observation.
-
-        Applies puzzle-state normalization to an observation from the wrapped
-        environment.
-
-        Args:
-            obs (np.ndarray): Raw puzzle-state observation.
-
-        Returns:
-            np.ndarray: Normalized puzzle-state observation.
-        """
-        return _normalize_puzzle_state_vector(obs, self._low, self._high)
-
-
-class NormalizeDualPuzzleStateWrapper(gym.ObservationWrapper):
-    """Normalize the `puzzle_state` field while preserving dual observations."""
-
-    def __init__(self, env: gym.Env):
-        """Initialize Dual-Observation Normalization Wrapper.
-
-        Configures normalization for the puzzle-state branch while preserving
-        RGB observations.
-
-        Args:
-            env (gym.Env): Environment producing dual observations.
-
-        Returns:
-            None: Wrapper state is initialized in place.
-        """
-        super().__init__(env)
-        self._low, self._high = _get_puzzle_state_bounds(env)
-        self.observation_space = gym.spaces.Dict(
-            {
-                "puzzle_state": gym.spaces.Box(
-                    low=-1.0,
-                    high=1.0,
-                    shape=env.observation_space["puzzle_state"].shape,
-                    dtype=np.float32,
-                ),
-                "pixels": env.observation_space["pixels"],
-            }
-        )
-
-    def observation(self, obs: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """Normalize Dual Observation.
-
-        Normalizes the ``puzzle_state`` field and keeps pixel data unchanged.
-
-        Args:
-            obs (dict[str, np.ndarray]): Dual observation dictionary.
-
-        Returns:
-            dict[str, np.ndarray]: Dual observation with normalized puzzle-state.
-        """
-        normalized = dict(obs)
-        normalized["puzzle_state"] = _normalize_puzzle_state_vector(
-            obs["puzzle_state"], self._low, self._high
-        )
-        return normalized
 
 
 def process_obs(

@@ -58,25 +58,24 @@ def _resolve_device(device_str: str) -> torch.device:
     return torch.device(device_str)
 
 
-def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, ...]:
+def _get_obs_shape(env: gym.Env, cfg: DictConfig) -> tuple[int, ...]:
     """Get Observation Shape.
 
     Determines the observation shape expected by the selected observation mode.
 
     Args:
         env (gym.Env): Environment instance.
-        obs_type (str): Observation type (for example ``"rgb"`` or
-            ``"puzzle_state"``).
         cfg (DictConfig): Experiment configuration.
 
     Returns:
         tuple[int, ...]: Observation tensor shape for agent initialization.
     """
+    obs_type = cfg.agent.obs_type
     if obs_type == "rgb":
         return (3, cfg.env.window_width, cfg.env.window_height)
     else:
         # For puzzle_state (or dual), get the flat discrete shape
-        obs_space = env.unwrapped.observation_space
+        # obs_space = env.unwrapped.observation_space
         # TODO: This should be rewritten
         # if "puzzle_state" in obs_space.spaces:
         #    return obs_space["puzzle_state"].shape
@@ -140,15 +139,14 @@ def run_train_dyad(cfg: DictConfig) -> float:
     env_a = make_dual_obs_env(cfg)
     env_b = make_dual_obs_env(cfg)
 
-    obs_shape_a = _get_obs_shape(env_a, "puzzle_state", cfg)
-    obs_shape_b = _get_obs_shape(env_b, "rgb", cfg)
+    obs_shape_a = _get_obs_shape(env_a, cfg)
+    obs_shape_b = _get_obs_shape(env_b, cfg)
     num_actions = env_a.action_space.n
 
     agent_a_cfg = cfg.get("agent_a", cfg.agent)
     agent_b_cfg = cfg.get("agent_b", cfg.agent)
 
     agent_a = DQNAgent(
-        obs_type="puzzle_state",
         obs_shape=obs_shape_a,
         num_actions=num_actions,
         cfg=cfg,
@@ -156,7 +154,6 @@ def run_train_dyad(cfg: DictConfig) -> float:
         device=device,
     )
     agent_b = DQNAgent(
-        obs_type="rgb",
         obs_shape=obs_shape_b,
         num_actions=num_actions,
         cfg=cfg,
