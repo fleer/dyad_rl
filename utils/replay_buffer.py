@@ -1,5 +1,5 @@
 import random
-from collections import namedtuple
+from collections import namedtuple, deque
 
 import numpy as np
 import torch
@@ -35,9 +35,7 @@ class ReplayBuffer:
         Returns:
             None: Buffer state is initialized in place.
         """
-        self.capacity = capacity
-        self.buffer: list[Transition] = []
-        self.position = 0
+        self.buffer = deque(maxlen=capacity) 
 
     def push(
         self,
@@ -85,11 +83,7 @@ class ReplayBuffer:
             state_rgb,
             next_state_rgb,
         )
-        if len(self.buffer) < self.capacity:
-            self.buffer.append(transition)
-        else:
-            self.buffer[self.position] = transition
-        self.position = (self.position + 1) % self.capacity
+        self.buffer.append(transition)
 
     def extend(self, transitions: list[Transition]) -> None:
         """Extend Replay Buffer.
@@ -103,11 +97,7 @@ class ReplayBuffer:
             None: Transitions are inserted into storage.
         """
         for t in transitions:
-            if len(self.buffer) < self.capacity:
-                self.buffer.append(t)
-            else:
-                self.buffer[self.position] = t
-            self.position = (self.position + 1) % self.capacity
+            self.buffer.append(t)
 
     def sample(self, batch_size: int, device: torch.device) -> dict[str, torch.Tensor]:
         """Sample Transition Batch.
