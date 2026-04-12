@@ -87,59 +87,11 @@ def evaluate(
         "sem_win_rate": _sem(successes_arr.astype(float)),
         "avg_length": float(lengths_arr.mean()),
         "sem_length": _sem(lengths_arr),
-        "avg_success_length": float(success_lengths.mean()) if len(success_lengths) > 0 else 0.0,
+        "avg_success_length": float(success_lengths.mean())
+        if len(success_lengths) > 0
+        else 0.0,
         "sem_success_length": _sem(success_lengths_arr),
         "std_length": float(lengths_arr.std()),
-    }
-
-
-def evaluate_masked_random(
-    env: gym.Env,
-    n_episodes: int = 100,
-    max_steps: int = 10000,
-    reward_step_penalty: float = 0.0,
-) -> dict:
-    """Evaluate Masked-Random Baseline.
-
-    Evaluates a random policy constrained by action masks.
-
-    Args:
-        env (gym.Env): Gymnasium environment.
-        n_episodes (int): Number of episodes to run.
-        max_steps (int): Maximum steps per episode.
-        reward_step_penalty (float): Per-step shaping penalty subtracted from
-            environment reward for return accounting.
-
-    Returns:
-        dict: Baseline average return, win rate, and episode length.
-    """
-    returns: list[float] = []
-    lengths: list[int] = []
-    successes: list[bool] = []
-
-    for episode in range(n_episodes):
-        obs_raw, info = env.reset(seed=episode)
-        total_return = 0.0
-        reward = 0.0
-
-        for step in range(max_steps):
-            valid_actions = np.where(env.action_masks())[0]
-            action = int(np.random.choice(valid_actions))
-            obs_raw, reward, terminated, truncated, info = env.step(action)
-            shaped_reward = reward - reward_step_penalty
-            total_return += shaped_reward
-
-            if terminated or truncated:
-                break
-
-        returns.append(total_return)
-        lengths.append(step + 1)
-        successes.append(reward > 0)
-
-    return {
-        "avg_return": float(np.mean(returns)),
-        "win_rate": float(np.mean(successes)),
-        "avg_length": float(np.mean(lengths)),
     }
 
 
@@ -181,18 +133,20 @@ def collect_eval_trajectory(
             else np.asarray(env.action_masks(), dtype=bool)
         )
 
-        trajectory.append({
-            "state": obs,
-            "action": action,
-            "reward": reward,
-            "next_state": next_obs,
-            "done": episode_done,
-            "next_action_mask": next_action_mask,
-            "state_discrete": state_discrete,
-            "next_state_discrete": next_state_discrete,
-            "state_rgb": state_rgb,
-            "next_state_rgb": next_state_rgb,
-        })
+        trajectory.append(
+            {
+                "state": obs,
+                "action": action,
+                "reward": reward,
+                "next_state": next_obs,
+                "done": episode_done,
+                "next_action_mask": next_action_mask,
+                "state_discrete": state_discrete,
+                "next_state_discrete": next_state_discrete,
+                "state_rgb": state_rgb,
+                "next_state_rgb": next_state_rgb,
+            }
+        )
 
         obs = next_obs
         state_discrete = next_state_discrete
