@@ -34,7 +34,7 @@ from utils.env_factory import make_env, make_dual_obs_env
 from utils.metrics import MetricsLogger
 from training.train_single import train_single
 from training.train_dyad import train_dyad
-from evaluation.evaluate import evaluate, evaluate_masked_random
+from evaluation.evaluate import evaluate
 
 log = logging.getLogger(__name__)
 
@@ -77,9 +77,8 @@ def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, .
     else:
         # For puzzle_state (or dual), get the flat discrete shape
         obs_space = env.unwrapped.observation_space
-        print(f"Full observation space: {obs_space}")
         # TODO: This should be rewritten
-        #if "puzzle_state" in obs_space.spaces:
+        # if "puzzle_state" in obs_space.spaces:
         #    return obs_space["puzzle_state"].shape
         return env.observation_space.shape
 
@@ -172,7 +171,9 @@ def run_train_dyad(cfg: DictConfig) -> float:
 
     log.info(f"Agent A obs shape: {obs_shape_a}, Agent B obs shape: {obs_shape_b}")
 
-    best_win_rate = train_dyad(agent_a, agent_b, env_a, env_b, cfg, logger_a, logger_b, checkpoint_dir)
+    best_win_rate = train_dyad(
+        agent_a, agent_b, env_a, env_b, cfg, logger_a, logger_b, checkpoint_dir
+    )
     log.info("Dyad training complete.")
     return best_win_rate
 
@@ -209,36 +210,6 @@ def run_eval(cfg: DictConfig) -> None:
     log.info(f"Evaluation results: {result}")
 
 
-def run_baseline(cfg: DictConfig) -> dict:
-    """Run Masked-Random Baseline.
-
-    Evaluates a masked-random policy and saves baseline metrics.
-
-    Args:
-        cfg (DictConfig): Experiment configuration.
-
-    Returns:
-        dict: Baseline metric dictionary.
-    """
-    env = make_env(cfg)
-    result = evaluate_masked_random(
-        env,
-        n_episodes=cfg.training.eval_episodes,
-        max_steps=cfg.training.max_steps,
-    )
-    results_dir = os.path.join("results", cfg.experiment_name)
-    logger = MetricsLogger(results_dir, agent_name=cfg.experiment_name)
-    logger.log_baseline(
-        "masked_random",
-        result,
-        cfg.training.eval_episodes,
-        cfg.training.max_steps,
-    )
-    logger.save_baseline_json()
-    log.info(f"Masked-random baseline results: {result}")
-    return result
-
-
 @hydra.main(config_path="config", config_name="default", version_base=None)
 def main(cfg: DictConfig) -> float | None:
     """Dispatch Experiment Mode.
@@ -262,9 +233,6 @@ def main(cfg: DictConfig) -> float | None:
             return run_train_single(cfg)
     elif cfg.mode == "eval":
         run_eval(cfg)
-        return None
-    elif cfg.mode == "baseline":
-        run_baseline(cfg)
         return None
     else:
         raise ValueError(f"Unknown mode: {cfg.mode}")
