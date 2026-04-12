@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - override /env: samegame_5x5c3s2
+  - override /agent: mlp
+  - override /training: dqn
+env:
+  obs_type: puzzle_state
+experiment_name: exp_mlp_samegame5x5c3s2

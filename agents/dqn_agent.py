@@ -10,27 +10,10 @@ from omegaconf import DictConfig
 from agents.networks import MLPNetwork, CNNNetwork
 from utils.replay_buffer import ReplayBuffer, Transition
 
-
-def polyak_update(params, target_params, tau: float) -> None:
-    """Update Target Parameters.
-
-    Performs in-place Polyak averaging for target parameters using
-    ``target = (1 - tau) * target + tau * params``.
-
-    Args:
-        params (Iterator[torch.nn.Parameter]): Source parameters, usually from
-            the policy network.
-        target_params (Iterator[torch.nn.Parameter]): Target parameters to be
-            updated.
-        tau (float): Interpolation factor in ``[0, 1]``. ``1.0`` performs a
-            hard copy.
-
-    Returns:
-        None: This function updates parameters in place.
-    """
-    with torch.no_grad():
-        for param, target_param in zip(params, target_params):
-            target_param.data.mul_(1 - tau).add_(param.data * tau)
+# By default, PyTorch 2.0+ may use 'medium' precision for matmul on float32 tensors,
+# which can cause instability in RL training.
+# Setting to 'high' ensures full float32 precision for matmul operations, improving stability at the cost of some performance.
+torch.set_float32_matmul_precision("high")
 
 
 class DQNAgent:
@@ -79,7 +62,6 @@ class DQNAgent:
         self.exploration_initial_eps = float(a_cfg.exploration_initial_eps)
         self.exploration_final_eps = float(a_cfg.exploration_final_eps)
         self.exploration_decay = max(1.0, float(a_cfg.exploration_decay))
-        self.tau = a_cfg.tau
         self.learning_rate = a_cfg.learning_rate
         self.buffer_size = a_cfg.buffer_size
         self.max_grad_norm = float(a_cfg.max_grad_norm)
@@ -92,15 +74,15 @@ class DQNAgent:
             # Priority: net_arch (SB3 naming) → hidden_size+num_layers (sweep compat) → hidden_sizes (legacy)
             net_arch = getattr(a_cfg, "net_arch", None)
             hidden_sizes = list(net_arch)
-            self.policy_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
+            policy_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
                 self.device
             )
-            self.target_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
+            target_net = MLPNetwork(input_dim, num_actions, hidden_sizes).to(
                 self.device
             )
         elif a_cfg.type == "cnn":
             c, h, w = obs_shape
-            self.policy_net = CNNNetwork(
+            policy_net = CNNNetwork(
                 c,
                 h,
                 w,
@@ -110,7 +92,7 @@ class DQNAgent:
                 list(a_cfg.conv_strides),
                 a_cfg.fc_hidden,
             ).to(self.device)
-            self.target_net = CNNNetwork(
+            target_net = CNNNetwork(
                 c,
                 h,
                 w,
@@ -123,12 +105,20 @@ class DQNAgent:
         else:
             raise ValueError(f"Unknown agent type: {a_cfg.type}")
 
+        # Q_target parameters are frozen.
+        for p in target_net.parameters():
+            p.requires_grad = False
+        # Compile networks with TorchDynamo for potential speedup (optional)
+        self.policy_net = torch.compile(policy_net, fullgraph=True)
+        self.target_net = torch.compile(target_net, fullgraph=True)
+
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
         # Q_target parameters are frozen.
         for p in self.target_net.parameters():
             p.requires_grad = False
 
+        # TODO Check if correct network parameters are being optimized
         self.optimizer = optim.AdamW(
             self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True
         )
@@ -187,14 +177,14 @@ class DQNAgent:
         ).unsqueeze(0)
         q_values = self.policy_net(state_t)
         if action_mask is not None:
-            mask_t = torch.as_tensor(
-                action_mask, dtype=torch.bool, device=self.device
-            )
+            mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
             q_values[0][~mask_t] = float("-inf")
         return int(q_values.argmax(dim=1).item())
 
     @torch.no_grad()
-    def _td_target(self, reward: torch.Tensor, next_value: torch.Tensor, done: torch.Tensor) -> torch.Tensor:
+    def _td_target(
+        self, reward: torch.Tensor, next_value: torch.Tensor, done: torch.Tensor
+    ) -> torch.Tensor:
         """Compute TD Target.
 
         Computes the TD target for a batch of transitions.
@@ -211,10 +201,10 @@ class DQNAgent:
         """
         next_state_values = self.policy_net(next_value)
         best_actions = torch.argmax(next_state_values, dim=1)
-        next_value = self.target_net(next_value)[np.arange(0, self.batch_size), best_actions]
-        return (
-            next_value * self.gamma * (1 - done.float()) + reward 
-        ).float()
+        next_value = self.target_net(next_value)[
+            np.arange(0, self.batch_size), best_actions
+        ]
+        return (next_value * self.gamma * (1 - done.float()) + reward).float()
 
     def _td_estimate(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         """Compute TD Estimate.
@@ -229,7 +219,9 @@ class DQNAgent:
         Returns:
             torch.Tensor: TD estimate values with shape ``(batch_size,)``.
         """
-        state_action_values = self.policy_net(state)[np.arange(0, self.batch_size), action]
+        state_action_values = self.policy_net(state)[
+            np.arange(0, self.batch_size), action
+        ]
         return state_action_values.float()
 
     def optimize(self) -> float:
@@ -249,7 +241,7 @@ class DQNAgent:
             self.last_optimize_stats = {
                 "loss": 0.0,
                 "non_zero_reward_frac": 0.0,
-                "terminal_frac": 0.0
+                "terminal_frac": 0.0,
             }
             return 0.0
 
@@ -288,24 +280,26 @@ class DQNAgent:
         return loss.item()
 
     def update_target_net(self) -> None:
-        """Update Target Network.
+        """Update Target Parameters.
 
-        Updates the target network parameters on the configured interval using
-        Polyak averaging.
+        Performs in-place Polyak averaging for target parameters using
+        ``target = (1 - tau) * target + tau * params``.
 
         Args:
-            None: This method uses internal counters and network parameters.
+            params (Iterator[torch.nn.Parameter]): Source parameters, usually from
+                the policy network.
+            target_params (Iterator[torch.nn.Parameter]): Target parameters to be
+                updated.
+            tau (float): Interpolation factor in ``[0, 1]``. ``1.0`` performs a
+                hard copy.
 
         Returns:
-            None: The target network is updated in place when due.
+            None: This function updates parameters in place.
         """
         self._n_calls += 1
         if self._n_calls % self.target_update_interval != 0:
             return
-        # self.target_net.load_state_dict(self.policy_net.state_dict())
-        polyak_update(
-            self.policy_net.parameters(), self.target_net.parameters(), self.tau
-        )
+        self.target_net.load_state_dict(self.policy_net.state_dict())
 
     # --- Dyad support methods ---
 
