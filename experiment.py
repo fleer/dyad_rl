@@ -98,7 +98,7 @@ def run_train_single(cfg: DictConfig) -> float:
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
     env = make_env(cfg)
-    obs_shape = _get_obs_shape(env, cfg.env.obs_type, cfg)
+    obs_shape = _get_obs_shape(env, cfg)
     num_actions = env.action_space.n
     log.info(f"Obs shape: {obs_shape}, Actions: {num_actions}")
 

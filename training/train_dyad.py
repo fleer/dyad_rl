@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -190,6 +191,7 @@ def train_dyad(
     best_win_rate_b = -1.0
     total_shared_to_a = 0
     total_shared_to_b = 0
+    sharing_stats: list[dict] = []
 
     learning_starts_a = int(_cfg_a.get("learning_starts", 100))
     learning_starts_b = int(_cfg_b.get("learning_starts", 100))
@@ -325,6 +327,15 @@ def train_dyad(
                     #     )
                     #     continue
 
+                    sharing_stats.append(
+                        {
+                            "episode": episode,
+                            "accepted_for_a": len(accepted_for_a),
+                            "traj_b_len": len(traj_b),
+                            "accepted_for_b": len(accepted_for_b),
+                            "traj_a_len": len(traj_a),
+                        }
+                    )
                     log.info(
                         f"  SHARE @ {episode}: "
                         f"A accepted {len(accepted_for_a)}/{len(traj_b)} from B | "
@@ -401,6 +412,11 @@ def train_dyad(
     logger_b.save_csv()
     logger_b.save_eval_json()
     logger_b.save_baseline_json()
+
+    sharing_stats_path = os.path.join(logger_a.log_dir, "sharing_stats.json")
+    with open(sharing_stats_path, "w") as f:
+        json.dump(sharing_stats, f, indent=2)
+    log.info(f"Sharing stats saved to {sharing_stats_path}")
     agent_a.save(os.path.join(dir_a, "final_model.pt"))
     agent_b.save(os.path.join(dir_b, "final_model.pt"))
 
