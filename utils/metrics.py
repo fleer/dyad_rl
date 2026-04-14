@@ -201,22 +201,6 @@ class MetricsLogger:
         with open(path, "w") as f:
             json.dump([asdict(e) for e in self.evals], f, indent=2)
 
-    def save_baseline_json(self, path: str | None = None) -> None:
-        """Save Baseline JSON.
-
-        Persists baseline records as JSON.
-
-        Args:
-            path (str | None): Optional output path. Default path is derived
-                from logger settings.
-
-        Returns:
-            None: File is written to disk.
-        """
-        path = path or os.path.join(self.log_dir, f"{self.agent_name}_baselines.json")
-        with open(path, "w") as f:
-            json.dump([asdict(b) for b in self.baselines], f, indent=2)
-
     def get_recent_stats(self, window: int = 100) -> dict:
         """Compute Recent Aggregate Stats.
 
@@ -245,7 +229,8 @@ class MetricsLogger:
             "avg_length": sum(lengths) / len(lengths),
             "win_rate": sum(successes) / len(successes),
             "avg_loss": sum(loss) / len(loss),
-            "avg_non_zero_reward_frac": sum(non_zero_reward_frac) / len(non_zero_reward_frac),
+            "avg_non_zero_reward_frac": sum(non_zero_reward_frac)
+            / len(non_zero_reward_frac),
             "avg_terminal_frac": sum(terminal_frac) / len(terminal_frac),
             "avg_td_abs_zero": sum(td_abs_zero) / len(td_abs_zero),
             "avg_td_abs_pos": sum(td_abs_pos) / len(td_abs_pos),

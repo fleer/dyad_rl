@@ -20,7 +20,6 @@ def prefill_buffer(
     env: gym.Env,
     num_transitions: int,
     max_steps: int,
-    dual_obs: bool = False,
     reward_step_penalty: float = 0.0,
 ) -> None:
     """Prefill Replay Buffer.
@@ -32,7 +31,6 @@ def prefill_buffer(
         env (gym.Env): Training environment.
         num_transitions (int): Number of transitions to collect.
         max_steps (int): Maximum steps per episode during prefill.
-        dual_obs (bool): Whether environment returns dual observations.
         reward_step_penalty (float): Per-step shaping penalty subtracted from
             reward.
 
@@ -44,9 +42,7 @@ def prefill_buffer(
     with tqdm(total=num_transitions) as pbar:
         while collected < num_transitions:
             obs_raw, _ = env.reset()
-            obs, state_discrete, state_rgb = process_obs(
-                obs_raw, agent.obs_type, dual_obs
-            )
+            obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type)
 
             for _ in range(max_steps):
                 action_mask = env.action_masks()
@@ -58,7 +54,7 @@ def prefill_buffer(
                 )
                 shaped_reward = reward - reward_step_penalty
                 next_obs, next_state_discrete, next_state_rgb = process_obs(
-                    next_obs_raw, agent.obs_type, dual_obs
+                    next_obs_raw, agent.obs_type
                 )
 
                 episode_done = terminated or truncated
@@ -95,7 +91,6 @@ def _run_episode(
     agent: DQNAgent,
     env: gym.Env,
     max_steps: int,
-    dual_obs: bool = False,
     reward_step_penalty: float = 0.0,
     train_freq: int = 4,
     gradient_steps: int = 1,
@@ -108,7 +103,6 @@ def _run_episode(
         agent (DQNAgent): Agent to train.
         env (gym.Env): Training environment.
         max_steps (int): Maximum environment steps.
-        dual_obs (bool): Whether to process dual observations.
         reward_step_penalty (float): Per-step shaping penalty.
         train_freq (int): Number of environment steps between optimization
             calls.
@@ -120,7 +114,7 @@ def _run_episode(
         diagnostics.
     """
     obs_raw, info = env.reset()
-    obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs)
+    obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type)
 
     total_return = 0.0
     total_loss = 0.0
@@ -133,7 +127,7 @@ def _run_episode(
         next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
         shaped_reward = reward - reward_step_penalty
         next_obs, next_state_discrete, next_state_rgb = process_obs(
-            next_obs_raw, agent.obs_type, dual_obs
+            next_obs_raw, agent.obs_type
         )
 
         episode_done = terminated or truncated
@@ -211,7 +205,6 @@ def train_single(
     checkpoint_interval = cfg.training.checkpoint_interval
     log_interval = cfg.training.log_interval
     reward_step_penalty = float(cfg.training.get("reward_step_penalty", 0.0))
-    dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
     train_freq = int(cfg.agent.get("train_freq", 4))
     gradient_steps = int(cfg.agent.get("gradient_steps", 1))
 
@@ -220,9 +213,7 @@ def train_single(
 
     learning_starts = int(cfg.agent.get("learning_starts", 100))
     if learning_starts > 0:
-        prefill_buffer(
-            agent, env, learning_starts, max_steps, dual_obs, reward_step_penalty
-        )
+        prefill_buffer(agent, env, learning_starts, max_steps, reward_step_penalty)
 
     eval_result = evaluate(
         agent,
@@ -271,7 +262,6 @@ def train_single(
                     agent,
                     env,
                     max_steps,
-                    dual_obs,
                     reward_step_penalty,
                     train_freq=train_freq,
                     gradient_steps=gradient_steps,
@@ -345,10 +335,9 @@ def train_single(
                 if episode % checkpoint_interval == 0:
                     agent.save(os.path.join(checkpoint_dir, f"checkpoint_{episode}.pt"))
 
-    # Save final metrics
-    logger.save_csv()
-    logger.save_eval_json()
-    logger.save_baseline_json()
+                # Save final metrics
+                logger.save_csv()
+                logger.save_eval_json()
     agent.save(os.path.join(checkpoint_dir, "final_model.pt"))
 
     return best_win_rate

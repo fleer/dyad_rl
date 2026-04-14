@@ -71,6 +71,7 @@ def _get_obs_shape(env: gym.Env, cfg: DictConfig) -> tuple[int, ...]:
         tuple[int, ...]: Observation tensor shape for agent initialization.
     """
     obs_type = cfg.agent.obs_type
+    print(env.observation_space)
     if obs_type == "rgb":
         return (3, cfg.env.window_width, cfg.env.window_height)
     else:
@@ -97,13 +98,12 @@ def run_train_single(cfg: DictConfig) -> float:
     log.info(f"Device: {device}")
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
-    env = make_env(cfg)
+    env = make_dual_obs_env(cfg)
     obs_shape = _get_obs_shape(env, cfg)
     num_actions = env.action_space.n
     log.info(f"Obs shape: {obs_shape}, Actions: {num_actions}")
 
     agent = DQNAgent(
-        obs_type=cfg.env.obs_type,
         obs_shape=obs_shape,
         num_actions=num_actions,
         cfg=cfg,

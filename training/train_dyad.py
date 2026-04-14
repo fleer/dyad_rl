@@ -201,7 +201,6 @@ def train_dyad(
             env_a,
             learning_starts_a,
             max_steps,
-            dual_obs=True,
             reward_step_penalty=reward_step_penalty,
         )
     if learning_starts_b > 0:
@@ -210,7 +209,6 @@ def train_dyad(
             env_b,
             learning_starts_b,
             max_steps,
-            dual_obs=True,
             reward_step_penalty=reward_step_penalty,
         )
 
@@ -236,7 +234,6 @@ def train_dyad(
                     agent_a,
                     env_a,
                     max_steps,
-                    dual_obs=True,
                     reward_step_penalty=reward_step_penalty,
                     train_freq=train_freq_a,
                     gradient_steps=gradient_steps_a,
@@ -255,7 +252,6 @@ def train_dyad(
                     agent_b,
                     env_b,
                     max_steps,
-                    dual_obs=True,
                     reward_step_penalty=reward_step_penalty,
                     train_freq=train_freq_b,
                     gradient_steps=gradient_steps_b,
@@ -408,10 +404,8 @@ def train_dyad(
     # Save final metrics and models
     logger_a.save_csv()
     logger_a.save_eval_json()
-    logger_a.save_baseline_json()
     logger_b.save_csv()
     logger_b.save_eval_json()
-    logger_b.save_baseline_json()
 
     sharing_stats_path = os.path.join(logger_a.log_dir, "sharing_stats.json")
     with open(sharing_stats_path, "w") as f:

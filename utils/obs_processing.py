@@ -85,7 +85,6 @@ def normalize_rgb(obs: np.ndarray) -> np.ndarray:
 def process_obs(
     obs: dict | np.ndarray,
     agent_obs_type: str,
-    dual_obs: bool,
 ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None]:
     """Process Observation.
 
@@ -96,24 +95,15 @@ def process_obs(
         obs (dict | np.ndarray): Raw environment observation.
         agent_obs_type (str): Agent observation type (``"rgb"`` or
             ``"puzzle_state"``).
-        dual_obs (bool): Whether the environment returns dual observations.
 
     Returns:
         tuple[np.ndarray, np.ndarray | None, np.ndarray | None]: Agent
         observation, discrete-state branch, and RGB branch.
     """
-    if dual_obs:
-        state_discrete = np.asarray(obs["puzzle_state"], dtype=np.float32)
-        state_rgb = normalize_rgb(obs["pixels"])
-        if agent_obs_type == "rgb":
-            agent_obs = state_rgb
-        else:
-            agent_obs = state_discrete
-        return agent_obs, state_discrete, state_rgb
-
+    state_discrete = np.asarray(obs["puzzle_state"], dtype=np.float32)
+    state_rgb = normalize_rgb(obs["pixels"])
     if agent_obs_type == "rgb":
-        state_rgb = normalize_rgb(obs["pixels"])
-        return state_rgb, None, None
-
-    state_discrete = np.asarray(obs, dtype=np.float32)
-    return state_discrete, None, None
+        agent_obs = state_rgb
+    else:
+        agent_obs = state_discrete
+    return agent_obs, state_discrete, state_rgb

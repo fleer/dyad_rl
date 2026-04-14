@@ -44,14 +44,13 @@ def evaluate(
     Returns:
         dict: Aggregated return, win-rate, length, and uncertainty metrics.
     """
-    dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
     returns: list[float] = []
     lengths: list[int] = []
     successes: list[bool] = []
 
     for _ in range(n_episodes):
         obs_raw, info = env.reset()
-        obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
+        obs, _, _ = process_obs(obs_raw, agent.obs_type)
 
         total_return = 0.0
         reward = 0.0
@@ -61,7 +60,7 @@ def evaluate(
             action = agent.select_action(obs, action_mask, explore=False)
 
             obs_raw, reward, terminated, truncated, info = env.step(action)
-            obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
+            obs, _, _ = process_obs(obs_raw, agent.obs_type)
 
             shaped_reward = reward - reward_step_penalty
             total_return += shaped_reward
@@ -115,7 +114,7 @@ def collect_eval_trajectory(
     """
     trajectory: list[dict] = []
     obs_raw, info = env.reset(seed=42)
-    obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type, dual_obs=True)
+    obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type)
 
     for step in range(max_steps):
         action_mask = env.action_masks()
@@ -123,7 +122,7 @@ def collect_eval_trajectory(
 
         next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
         next_obs, next_state_discrete, next_state_rgb = process_obs(
-            next_obs_raw, agent.obs_type, dual_obs=True
+            next_obs_raw, agent.obs_type
         )
 
         episode_done = terminated or truncated
