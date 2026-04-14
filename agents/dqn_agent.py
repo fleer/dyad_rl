@@ -106,10 +106,8 @@ class DQNAgent:
         for p in target_net.parameters():
             p.requires_grad = False
         # Compile networks with TorchDynamo for potential speedup (optional)
-        # self.policy_net = torch.compile(policy_net, fullgraph=True)
-        # self.target_net = torch.compile(target_net, fullgraph=True)
-        self.policy_net = policy_net
-        self.target_net = target_net
+        self.policy_net = torch.compile(policy_net, fullgraph=True)
+        self.target_net = torch.compile(target_net, fullgraph=True)
 
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
