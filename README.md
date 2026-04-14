@@ -347,33 +347,28 @@ Tracked during training and saved to `results/<experiment_name>/`:
 
 ## Plotting Results
 
-After running experiments, generate comparison plots from any discovered result directories using the standalone plotting script:
+After running experiments, generate evaluation comparison plots with the standalone plotting script.
+
+The `--experiments` argument is required and must be a list of paths to `*_eval.json` files (relative or absolute):
 
 ```bash
-python plot_results.py
+python plot_results.py --experiments results/exp1/run1_eval.json ./results/exp2/run2_eval.json
 ```
 
 Useful options:
 
 ```bash
-# List available experiment names discovered under results/
-python plot_results.py --list-experiments
-
-# Compare only a selected subset of experiments
-python plot_results.py --experiments exp1_mlp_samegame_2x3c3s2 exp2_mlp_samegame_2x3c3s2
+# Compare a selected set of eval JSON files
+python plot_results.py --experiments results/exp1/run1_eval.json ./results/exp2/run2_eval.json
 
 # Write plots to a custom output root instead of results/visualizations/
-python plot_results.py --output-dir comparison_plots
+python plot_results.py --experiments results/exp1/run1_eval.json ./results/exp2/run2_eval.json --output-dir comparison_plots
 ```
 
-The script scans `results/<experiment_name>/` directories, automatically matches `*_training.csv` files with their corresponding `*_eval.json` files, and compares an arbitrary number of selected experiments as long as they follow that schema.
+The script groups selected files by inferred board size and compares all provided series that have valid `*_eval.json` inputs.
 
 It generates:
 
-- **Training Return curves** (`training_return.png`) — Smoothed total reward over episodes for each experiment
-- **Training Win Rate curves** (`training_win_rate.png`) — Smoothed success rate over episodes
-- **Training Episode Length comparison** (`training_episode_length_comparison.png`) — Smoothed episode length trajectories
-- **Training Loss comparison** (`training_loss_comparison.png`) — Smoothed training loss trajectories when available
 - **Evaluation Win Rate comparison** (`eval_comparison.png`) — Evaluation checkpoints with uncertainty bands (SEM) for each agent
 - **Evaluation Episode Length comparison** (`eval_length_comparison.png`) — Evaluation episode-length curves across checkpoints
 
@@ -383,6 +378,55 @@ Plots are grouped by inferred puzzle size, with one subdirectory per board size 
 - `comparison_plots/2x3/` — Same output structure when `--output-dir comparison_plots` is used
 
 The evaluation plots include shaded uncertainty bands around the win-rate curves, reflecting the standard error of the mean (SEM) computed during each evaluation run across multiple episodes.
+
+### Plotting Dyad Sharing Rates
+
+For dyad runs that produce a `sharing_stats.json` file, generate a dedicated sharing-rate plot with:
+
+```bash
+python plot_dyad_sharing.py results/exp_dyad_mlp_samegame2x3c3s2_averaged/sharing_stats.json
+```
+
+Or write the figure to a custom directory:
+
+```bash
+python plot_dyad_sharing.py results/exp_dyad_mlp_samegame2x3c3s2_averaged/sharing_stats.json --output-dir comparison_plots
+```
+
+The script reads per-episode dyad sharing statistics and plots:
+
+- **Agent A acceptance rate** — `accepted_for_a / traj_b_len`
+- **Agent B acceptance rate** — `accepted_for_b / traj_a_len`
+
+The output figure, `dyad_sharing_acceptance_rates.png`, includes both the raw per-episode acceptance-rate curves and 1000-episode moving-average overlays for each agent.
+
+### Averaging Multiple Runs
+
+Use `average_runs.py` to average JSON metrics across multiple enumerated experiment folders such as `exp_mlp_samegame_1`, `exp_mlp_samegame_2`, and `exp_mlp_samegame_3`.
+
+```bash
+python average_runs.py results
+```
+
+The script:
+
+- groups folders whose names end in `_<N>` by their shared base name
+- loads each JSON array found in those folders
+- aligns records by the first key in each JSON object, typically `episode`
+- averages numeric fields across runs
+- writes the aggregated outputs to a new `<base_name>_averaged/` directory
+
+For example, averaging:
+
+- `results/exp_dyad_mlp_samegame2x3c3s2_1/`
+- `results/exp_dyad_mlp_samegame2x3c3s2_2/`
+- `results/exp_dyad_mlp_samegame2x3c3s2_3/`
+
+produces:
+
+- `results/exp_dyad_mlp_samegame2x3c3s2_averaged/`
+
+This is useful before plotting when you want one aggregated `*_eval.json` file or `sharing_stats.json` derived from several repeated runs.
 
 ## Resuming Training from a Checkpoint
 

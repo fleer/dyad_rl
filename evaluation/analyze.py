@@ -310,3 +310,86 @@ def plot_eval_length_comparison(
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, filename), dpi=150)
     plt.close()
+
+
+def plot_dyad_sharing_acceptance_rates(
+    json_path: str,
+    output_dir: str,
+    filename: str = "dyad_sharing_acceptance_rates.png",
+    window: int = 1000,
+) -> None:
+    """Plot dyad sharing acceptance rates against episode.
+
+    Computes and plots two per-episode acceptance-rate curves from a dyad
+    sharing statistics JSON file:
+    - Agent A acceptance rate: accepted_for_a / traj_b_len
+    - Agent B acceptance rate: accepted_for_b / traj_a_len
+
+    Args:
+        json_path (str): Path to a dyad sharing statistics JSON file.
+        output_dir (str): Directory to save output plot.
+        filename (str): Output image filename.
+        window (int): Moving-average window size for smoothed overlays.
+
+    Returns:
+        None: Plot image file is written to disk.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    sharing_stats = load_eval_json(json_path)
+    if not sharing_stats:
+        return
+
+    episodes: list[float] = []
+    acceptance_rate_a: list[float] = []
+    acceptance_rate_b: list[float] = []
+
+    for record in sharing_stats:
+        traj_b_len = float(record.get("traj_b_len", 0.0))
+        traj_a_len = float(record.get("traj_a_len", 0.0))
+        accepted_for_a = float(record.get("accepted_for_a", 0.0))
+        accepted_for_b = float(record.get("accepted_for_b", 0.0))
+
+        if traj_a_len <= 0 or traj_b_len <= 0:
+            continue
+
+        episodes.append(float(record["episode"]))
+        acceptance_rate_a.append(accepted_for_a / traj_b_len)
+        acceptance_rate_b.append(accepted_for_b / traj_a_len)
+
+    if not episodes:
+        return
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(episodes, acceptance_rate_a, label="Agent A", alpha=0.2)
+    ax.plot(episodes, acceptance_rate_b, label="Agent B", alpha=0.2)
+
+    if len(episodes) >= window:
+        smoothed_episodes = episodes[window - 1 :]
+        smoothed_acceptance_rate_a = smooth(acceptance_rate_a, window)
+        smoothed_acceptance_rate_b = smooth(acceptance_rate_b, window)
+        ax.plot(
+            smoothed_episodes,
+            smoothed_acceptance_rate_a,
+            label=f"Agent A (Moving Average over {window} episodes)",
+            alpha=0.95,
+            linewidth=2.0,
+        )
+        ax.plot(
+            smoothed_episodes,
+            smoothed_acceptance_rate_b,
+            label=f"Agent B (Moving Average over {window} episodes)",
+            alpha=0.95,
+            linewidth=2.0,
+        )
+
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Acceptance Rate")
+    ax.set_title("Dyad Sharing Acceptance Rate")
+    ax.set_ylim(0.0, 1.0)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, filename), dpi=150)
+    plt.close(fig)
