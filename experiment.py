@@ -112,7 +112,7 @@ def run_train_single(cfg: DictConfig) -> float:
 
     results_dir = os.path.join("results", cfg.experiment_name)
     checkpoint_dir = os.path.join("checkpoints", cfg.experiment_name)
-    logger = MetricsLogger(results_dir, agent_name=agent)
+    logger = MetricsLogger(results_dir, agent_name="agent")
 
     best_win_rate = train_single(agent, env, cfg, logger, checkpoint_dir)
     log.info("Training complete.")
