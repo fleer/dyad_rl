@@ -1,6 +1,5 @@
 puzzle: samegame
 params: 2x3c3s2
-obs_type: puzzle_state # puzzle_state | rgb
 render_mode: rgb_array
 window_width: 128
 window_height: 128

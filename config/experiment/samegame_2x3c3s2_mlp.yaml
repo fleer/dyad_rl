@@ -4,8 +4,6 @@ defaults:
   - override /agent: mlp
   - override /training: dqn
 experiment_name: exp_mlp_samegame2x3c3s2
-env:
-  obs_type: puzzle_state
 agent:
   buffer_size: 500000 # SB3 default: 1_000_000; reduced due to memory constraints
   learning_starts: 500000 # SB3 default: 100 

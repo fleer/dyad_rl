@@ -7,10 +7,8 @@ import torch
 Transition = namedtuple(
     "Transition",
     [
-        "state",
         "action",
         "reward",
-        "next_state",
         "done",
         "next_action_mask",
         "state_discrete",
@@ -41,12 +39,12 @@ class ReplayBuffer:
         self.buffer = deque(maxlen=capacity)
         self.observation_type = observation_type
 
+    # TODO: Remobe state and next_ste as it handles redundant data and only use
+    # state_discrete and state_rgb
     def push(
         self,
-        state: np.ndarray,
         action: int,
         reward: float,
-        next_state: np.ndarray,
         done: bool,
         next_action_mask: np.ndarray | None = None,
         state_discrete: np.ndarray | None = None,
@@ -59,10 +57,8 @@ class ReplayBuffer:
         Stores one transition in the circular replay buffer.
 
         Args:
-            state (np.ndarray): Current observation.
             action (int): Action index.
             reward (float): Immediate reward.
-            next_state (np.ndarray): Next observation.
             done (bool): Whether transition is terminal.
             next_action_mask (np.ndarray | None): Valid action mask for next
                 state.
@@ -76,16 +72,16 @@ class ReplayBuffer:
             None: Transition is inserted into storage.
         """
         transition = Transition(
-            state,
             action,
             reward,
-            next_state,
             done,
             next_action_mask,
             state_discrete,
             next_state_discrete,
-            state_rgb,
-            next_state_rgb,
+            [],
+            []
+            # state_rgb,
+            # next_state_rgb,
         )
         self.buffer.append(transition)
 
@@ -118,8 +114,6 @@ class ReplayBuffer:
         """
         batch = random.sample(self.buffer, batch_size)
 
-        raw_next_state_list = [t.next_state for t in batch]
-        raw_state_list = [t.state for t in batch]
         if self.observation_type == "rgb":
             # For RGB, stack along channel dimension
             raw_state_list = [t.state_rgb for t in batch]

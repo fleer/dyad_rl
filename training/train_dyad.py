@@ -15,7 +15,6 @@ from evaluation.evaluate import (
     evaluate,
     collect_eval_trajectory,
 )
-from utils.obs_processing import normalize_rgb
 from training.train_single import _run_episode, prefill_buffer
 
 log = logging.getLogger(__name__)
@@ -24,8 +23,6 @@ log = logging.getLogger(__name__)
 def _share_experience(
     rater: DQNAgent,
     provider_trajectory: list[dict],
-    rater_obs_key: str,
-    rater_next_obs_key: str,
     rating_threshold: float,
 ) -> list[Transition]:
     """Share Rated Experience.
@@ -46,36 +43,7 @@ def _share_experience(
     if not provider_trajectory:
         return []
 
-    # Extract rater-compatible states from the trajectory
-    rater_states = []
-    for step in provider_trajectory:
-        s = step.get(rater_obs_key)
-        if s is None:
-            return []  # Dual obs not available
-        rater_states.append(s)
-
-    rater_states_arr = np.array(rater_states, dtype=np.float32)
-    if rater.obs_type == "rgb":
-        rater_states_arr = normalize_rgb(rater_states_arr)
-
-    # Compute rater's Q-values for the provider's (state, action) pairs
-    actions = [step["action"] for step in provider_trajectory]
-    transitions_for_rating = [
-        Transition(
-            state=rater_states_arr[i],
-            action=actions[i],
-            reward=0,
-            next_state=np.zeros_like(rater_states_arr[i]),
-            done=False,
-            next_action_mask=None,
-            state_discrete=None,
-            next_state_discrete=None,
-            state_rgb=None,
-            next_state_rgb=None,
-        )
-        for i in range(len(provider_trajectory))
-    ]
-    expected_returns = rater.compute_expected_return(transitions_for_rating)
+    expected_returns = rater.compute_expected_return(provider_trajectory)
 
     # TODO: Consider
     # Compute actual cumulative discounted return from provider's trajectory
@@ -96,28 +64,16 @@ def _share_experience(
 
     for i, step in enumerate(provider_trajectory):
         if ratings[i] > rating_threshold:
-            # Build transition using rater-compatible observations
-            rater_next_s = step.get(rater_next_obs_key)
-            if rater_next_s is not None and rater.obs_type == "rgb":
-                rater_next_s = normalize_rgb(rater_next_s)
-            elif rater_next_s is None:
-                logging.error(
-                    f"Missing next observation for rating at index {i}, skipping transition"
-                )
-                continue
-
             accepted.append(
                 Transition(
-                    state=rater_states_arr[i],
                     action=step["action"],
                     reward=step["reward"],
-                    next_state=rater_next_s,
                     done=step["done"],
-                    next_action_mask=step.get("next_action_mask"),
-                    state_discrete=step.get("state_discrete"),
-                    next_state_discrete=step.get("next_state_discrete"),
-                    state_rgb=step.get("state_rgb"),
-                    next_state_rgb=step.get("next_state_rgb"),
+                    next_action_mask=step["next_action_mask"],
+                    state_discrete=step["state_discrete"],
+                    next_state_discrete=step["next_state_discrete"],
+                    state_rgb=step["state_rgb"],
+                    next_state_rgb=step["next_state_rgb"],
                 )
             )
 
@@ -166,21 +122,6 @@ def train_dyad(
     gradient_steps_a = int(_cfg_a.get("gradient_steps", 1))
     train_freq_b = int(_cfg_b.get("train_freq", 4))
     gradient_steps_b = int(_cfg_b.get("gradient_steps", 1))
-
-    # Determine obs keys for cross-rating
-    # Agent A rates Agent B's trajectory using A's observation format
-    a_obs_key = "state_discrete" if agent_a.obs_type == "puzzle_state" else "state_rgb"
-    a_next_key = (
-        "next_state_discrete"
-        if agent_a.obs_type == "puzzle_state"
-        else "next_state_rgb"
-    )
-    b_obs_key = "state_discrete" if agent_b.obs_type == "puzzle_state" else "state_rgb"
-    b_next_key = (
-        "next_state_discrete"
-        if agent_b.obs_type == "puzzle_state"
-        else "next_state_rgb"
-    )
 
     dir_a = os.path.join(checkpoint_dir, "agent_a")
     dir_b = os.path.join(checkpoint_dir, "agent_b")
@@ -282,14 +223,14 @@ def train_dyad(
                     traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
                     # Agent B rates Agent A's trajectory using B's own value function
                     accepted_for_b = _share_experience(
-                        agent_b, traj_a, b_obs_key, b_next_key, rating_threshold
+                        agent_b, traj_a, rating_threshold
                     )
                     agent_b.add_to_buffer(accepted_for_b)
                     total_shared_to_b += len(accepted_for_b)
                     traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
                     # Agent A rates Agent B's trajectory using A's own value function
                     accepted_for_a = _share_experience(
-                        agent_a, traj_b, a_obs_key, a_next_key, rating_threshold
+                        agent_a, traj_b, rating_threshold
                     )
                     # Add accepted transitions to replay buffers
                     agent_a.add_to_buffer(accepted_for_a)

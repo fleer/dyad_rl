@@ -3,8 +3,6 @@ defaults:
   - override /env: samegame_2x3c3s2
   - override /agent: cnn
   - override /training: dqn
-env:
-  obs_type: rgb
 experiment_name: exp_cnn_samegame2x3c3s2
 agent:
   buffer_size: 500000 # SB3 default: 1_000_000; reduced due to memory constraints

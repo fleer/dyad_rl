@@ -1,8 +1,0 @@
-# @package _global_
-defaults:
-  - override /env: samegame_2x3c3s2
-  - override /agent: cnn
-  - override /training: dqn
-env:
-  obs_type: rgb
-experiment_name: exp_cnn_samegame2x3c3s2

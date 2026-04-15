@@ -1,6 +1,5 @@
 puzzle: netslide
 params: 2x3b1
-obs_type: puzzle_state # puzzle_state | rgb
 render_mode: rgb_array
 window_width: 128
 window_height: 128

@@ -134,10 +134,8 @@ def collect_eval_trajectory(
 
         trajectory.append(
             {
-                "state": obs,
                 "action": action,
                 "reward": reward,
-                "next_state": next_obs,
                 "done": episode_done,
                 "next_action_mask": next_action_mask,
                 "state_discrete": state_discrete,

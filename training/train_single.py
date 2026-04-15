@@ -65,10 +65,8 @@ def prefill_buffer(
                 )
 
                 agent.replay_buffer.push(
-                    obs,
                     action,
                     shaped_reward,
-                    next_obs,
                     episode_done,
                     next_action_mask,
                     state_discrete,
@@ -76,7 +74,6 @@ def prefill_buffer(
                     state_rgb,
                     next_state_rgb,
                 )
-                obs = next_obs
                 state_discrete = next_state_discrete
                 state_rgb = next_state_rgb
                 collected += 1
@@ -138,10 +135,8 @@ def _run_episode(
         )
 
         agent.replay_buffer.push(
-            obs,
             action,
             shaped_reward,
-            next_obs,
             episode_done,
             next_action_mask,
             state_discrete,
