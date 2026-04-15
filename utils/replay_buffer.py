@@ -78,10 +78,10 @@ class ReplayBuffer:
             next_action_mask,
             state_discrete,
             next_state_discrete,
-            [],
-            []
-            # state_rgb,
-            # next_state_rgb,
+            state_rgb,
+            next_state_rgb,
+            # [],
+            # []
         )
         self.buffer.append(transition)
 
