@@ -19,6 +19,13 @@ if(build_shared_libraries)
                 ${platform_common_sources_pygame})
     target_link_libraries(common_pygame Python3::Python)
 
+    # On macOS the linker requires all symbols to be resolved at link time,
+    # but thegame and n_xpm_icons are defined per-puzzle and resolved at
+    # dlopen time when each lib<puzzle>.so loads common_pygame.
+    if(APPLE)
+        target_link_options(common_pygame PRIVATE -undefined dynamic_lookup)
+    endif()
+
     function(puzzle NAME)
       cmake_parse_arguments(OPT
         "" "DISPLAYNAME;DESCRIPTION;OBJECTIVE;WINDOWS_EXE_NAME" "" ${ARGN})
@@ -63,6 +70,12 @@ if(build_shared_libraries)
       endif()
 
       get_platform_puzzle_extra_source_files(extra_files ${NAME})
+
+      # On macOS the platform cmake returns no icon file, so fall back to
+      # no-icon.c to satisfy the n_xpm_icons link-time dependency.
+      if(NOT extra_files)
+        set(extra_files ${PUZZLE_PATH_PREFIX}no-icon.c)
+      endif()
 
       if (build_individual_puzzles)
         add_executable(${EXENAME} ${NAME}.c ${extra_files})
