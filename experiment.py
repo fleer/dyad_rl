@@ -58,20 +58,19 @@ def _resolve_device(device_str: str) -> torch.device:
     return torch.device(device_str)
 
 
-def _get_obs_shape(env: gym.Env, cfg: DictConfig) -> tuple[int, ...]:
+def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, ...]:
     """Get Observation Shape.
 
     Determines the observation shape expected by the selected observation mode.
 
     Args:
         env (gym.Env): Environment instance.
+        obs_type (str): Observation type, e.g., "rgb", "puzzle_state"
         cfg (DictConfig): Experiment configuration.
 
     Returns:
         tuple[int, ...]: Observation tensor shape for agent initialization.
     """
-    obs_type = cfg.agent.obs_type
-    print(env.observation_space)
     if obs_type == "rgb":
         return (3, cfg.env.window_width, cfg.env.window_height)
     else:
@@ -99,7 +98,7 @@ def run_train_single(cfg: DictConfig) -> float:
     log.info(f"Config:\n{OmegaConf.to_yaml(cfg)}")
 
     env = make_dual_obs_env(cfg)
-    obs_shape = _get_obs_shape(env, cfg)
+    obs_shape = _get_obs_shape(env, cfg.agent.obs_type, cfg)
     num_actions = env.action_space.n
     log.info(f"Obs shape: {obs_shape}, Actions: {num_actions}")
 
@@ -139,12 +138,12 @@ def run_train_dyad(cfg: DictConfig) -> float:
     env_a = make_dual_obs_env(cfg)
     env_b = make_dual_obs_env(cfg)
 
-    obs_shape_a = _get_obs_shape(env_a, cfg)
-    obs_shape_b = _get_obs_shape(env_b, cfg)
-    num_actions = env_a.action_space.n
-
     agent_a_cfg = cfg.get("agent_a", cfg.agent)
     agent_b_cfg = cfg.get("agent_b", cfg.agent)
+
+    obs_shape_a = _get_obs_shape(env_a, agent_a_cfg.obs_type, cfg)
+    obs_shape_b = _get_obs_shape(env_b, agent_b_cfg.obs_type, cfg)
+    num_actions = env_a.action_space.n
 
     agent_a = DQNAgent(
         obs_shape=obs_shape_a,
