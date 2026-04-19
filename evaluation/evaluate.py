@@ -3,6 +3,7 @@ import numpy as np
 
 from agents.dqn_agent import DQNAgent
 from utils.obs_processing import process_obs
+from utils.replay_buffer import Transition
 
 
 def _sem(values: np.ndarray) -> float:
@@ -133,16 +134,16 @@ def collect_eval_trajectory(
         )
 
         trajectory.append(
-            {
-                "action": action,
-                "reward": reward,
-                "done": episode_done,
-                "next_action_mask": next_action_mask,
-                "state_discrete": state_discrete,
-                "next_state_discrete": next_state_discrete,
-                "state_rgb": state_rgb,
-                "next_state_rgb": next_state_rgb,
-            }
+            Transition(
+                action,
+                reward,
+                episode_done,
+                next_action_mask,
+                state_discrete,
+                next_state_discrete,
+                state_rgb,
+                next_state_rgb,
+            )
         )
 
         obs = next_obs
