@@ -50,7 +50,7 @@ def _share_experience(
     actual_returns = np.zeros(len(provider_trajectory), dtype=np.float32)
     running_return = 0.0
     for i in reversed(range(len(provider_trajectory))):
-        running_return = provider_trajectory[i]["reward"] + rater.gamma * running_return
+        running_return = provider_trajectory[i].reward + rater.gamma * running_return
         actual_returns[i] = running_return
 
     # ATTENTION: This is the most critical part of the dyad learning algorithm.
@@ -66,14 +66,14 @@ def _share_experience(
         if ratings[i] > rating_threshold:
             accepted.append(
                 Transition(
-                    action=step["action"],
-                    reward=step["reward"],
-                    done=step["done"],
-                    next_action_mask=step["next_action_mask"],
-                    state_discrete=step["state_discrete"],
-                    next_state_discrete=step["next_state_discrete"],
-                    state_rgb=step["state_rgb"],
-                    next_state_rgb=step["next_state_rgb"],
+                    action=step.action,
+                    reward=step.reward,
+                    done=step.done,
+                    next_action_mask=step.next_action_mask,
+                    state_discrete=step.state_discrete,
+                    next_state_discrete=step.next_state_discrete,
+                    state_rgb=step.state_rgb,
+                    next_state_rgb=step.next_state_rgb,
                 )
             )
 

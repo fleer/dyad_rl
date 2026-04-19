@@ -332,10 +332,10 @@ class DQNAgent:
             np.ndarray: Expected returns with shape ``(len(transitions),)``.
         """
         actions = np.array([t.action for t in transitions], dtype=np.int64)
-        if self.observation_type == "rgb":
+        if self.obs_type == "rgb":
             # For RGB, stack along channel dimension
             states = np.array([t.state_rgb for t in transitions], dtype=np.float32)
-        elif self.observation_type == "puzzle_state":
+        elif self.obs_type == "puzzle_state":
             # For puzzle_state, stack along feature dimension
             states = np.array([t.state_discrete for t in transitions], dtype=np.float32)
         with torch.no_grad():
