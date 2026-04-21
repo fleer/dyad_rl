@@ -280,7 +280,7 @@ def train_single(
 
                 # Periodic logging
                 if episode % log_interval == 0:
-                    stats = logger.get_recent_stats(window=log_interval)
+                    stats = logger.get_recent_stats()
                     log.debug(
                         f"Episode {episode}/{total_episodes} | "
                         f"Avg Return: {stats.get('avg_return', 0):.3f} | "
@@ -330,9 +330,8 @@ def train_single(
                 if episode % checkpoint_interval == 0:
                     agent.save(os.path.join(checkpoint_dir, f"checkpoint_{episode}.pt"))
 
-                # Save final metrics
-                logger.save_csv()
-                logger.save_eval_json()
     agent.save(os.path.join(checkpoint_dir, "final_model.pt"))
+    logger.save_csv()
+    logger.save_eval_json()
 
     return best_win_rate

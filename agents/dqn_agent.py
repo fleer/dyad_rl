@@ -52,6 +52,10 @@ class DQNAgent:
         # Use agent_cfg if provided (for dyad with different configs), else cfg.agent
         a_cfg = agent_cfg if agent_cfg is not None else cfg.agent
 
+        assert a_cfg.buffer_size >= a_cfg.learning_starts, (
+            "Buffer size must be larger than learning_starts to allow for initial population before training."
+        )
+
         # Hyperparameters from agent config — names mirror SB3 DQN.__init__
         self.batch_size = a_cfg.batch_size
         self.gamma = a_cfg.gamma

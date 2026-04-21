@@ -235,35 +235,6 @@ def train_dyad(
                     # Add accepted transitions to replay buffers
                     agent_a.add_to_buffer(accepted_for_a)
                     total_shared_to_a += len(accepted_for_a)
-                    # for _ in range(100):
-                    #     if ret_a == 0:
-                    #         traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
-                    #         ret_a = sum(step["reward"] for step in traj_a)
-                    #         # Agent B rates Agent A's trajectory using B's own value function
-                    #         accepted_for_b = _share_experience(
-                    #             agent_b, traj_a, b_obs_key, b_next_key, rating_threshold
-                    #         )
-                    #         agent_b.add_to_buffer(accepted_for_b)
-                    #         total_shared_to_b += len(accepted_for_b)
-                    #     if ret_b == 0:
-                    #         traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
-                    #         ret_b = sum(step["reward"] for step in traj_b)
-                    #         # Agent A rates Agent B's trajectory using A's own value function
-                    #         accepted_for_a = _share_experience(
-                    #             agent_a, traj_b, a_obs_key, a_next_key, rating_threshold
-                    #         )
-                    #         # Add accepted transitions to replay buffers
-                    #         agent_a.add_to_buffer(accepted_for_a)
-                    #         total_shared_to_a += len(accepted_for_a)
-                    #     if ret_a > 0 and ret_b > 0:
-                    #         break  # Both agents had successful trajectories, no need to keep sampling
-                    #
-                    # if ret_a == 0 and ret_b == 0:
-                    #     log.info(
-                    #         f"  SHARE @ {episode}: Skipping sharing since both trajectories had non-positive return (A={ret_a:.1f}, B={ret_b:.1f})"
-                    #     )
-                    #     continue
-
                     sharing_stats.append(
                         {
                             "episode": episode,
@@ -273,19 +244,20 @@ def train_dyad(
                             "traj_a_len": len(traj_a),
                         }
                     )
-                    log.info(
-                        f"  SHARE @ {episode}: "
-                        f"A accepted {len(accepted_for_a)}/{len(traj_b)} from B | "
-                        f"B accepted {len(accepted_for_b)}/{len(traj_a)} from A | "
-                        f"Total shared: A={total_shared_to_a}, B={total_shared_to_b}"
-                    )
+                    # log.info(
+                    #     f"  SHARE @ {episode}: "
+                    #     f"A accepted {len(accepted_for_a)}/{len(traj_b)} from B | "
+                    #     f"B accepted {len(accepted_for_b)}/{len(traj_a)} from A | "
+                    #     f"Total shared: A={total_shared_to_a}, B={total_shared_to_b}"
+                    # )
 
                 # Periodic logging
                 if episode % log_interval == 0:
-                    stats_a = logger_a.get_recent_stats(window=log_interval)
-                    stats_b = logger_b.get_recent_stats(window=log_interval)
+                    stats_a = logger_a.get_recent_stats()
+                    stats_b = logger_b.get_recent_stats()
                     log.info(
                         f"Episode {episode}/{total_episodes}\n"
+                        f"Total shared: A={total_shared_to_a}, B={total_shared_to_b}"
                         f"  Agent A: Ret={stats_a.get('avg_return', 0):.3f} "
                         f"WR={stats_a.get('win_rate', 0):.3f} "
                         f"Len={stats_a.get('avg_length', 0):.0f} "

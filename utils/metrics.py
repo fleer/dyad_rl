@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+from collections import deque
 from dataclasses import dataclass, asdict
 
 
@@ -46,13 +47,15 @@ class BaselineRecord:
 class MetricsLogger:
     """Tracks training and evaluation metrics, writes CSV and JSON outputs."""
 
-    def __init__(self, log_dir: str, agent_name: str = "agent"):
+    def __init__(self, log_dir: str, log_interval: int, agent_name: str = "agent"):
         """Initialize Metrics Logger.
 
         Initializes in-memory metric stores and ensures output directory exists.
 
         Args:
             log_dir (str): Directory for persisted metric files.
+            log_interval (int): Number of recent episodes to keep in memory for
+            stats
             agent_name (str): Prefix used for output file names.
 
         Returns:
@@ -60,9 +63,13 @@ class MetricsLogger:
         """
         self.log_dir = log_dir
         self.agent_name = agent_name
-        self.episodes: list[EpisodeRecord] = []
+        # Bounded deque: oldest records are dropped once the window is full,
+        # preventing unbounded RAM growth during long training runs.
+        self.episodes: deque[EpisodeRecord] = deque(maxlen=log_interval)
         self.evals: list[EvalRecord] = []
         self.baselines: list[BaselineRecord] = []
+        self._csv_path: str = os.path.join(log_dir, f"{agent_name}_training.csv")
+        self._csv_initialized: bool = False
         os.makedirs(log_dir, exist_ok=True)
 
     def log_episode(
@@ -81,7 +88,9 @@ class MetricsLogger:
     ) -> None:
         """Log Training Episode.
 
-        Appends a per-episode training metric record.
+        Appends a per-episode training metric record and flushes it to the CSV
+        file immediately so that old records can be evicted from the in-memory
+        deque without losing data.
 
         Args:
             episode (int): Episode index.
@@ -102,23 +111,43 @@ class MetricsLogger:
                 transitions.
 
         Returns:
-            None: Record is appended to internal storage.
+            None: Record is appended to internal storage and written to disk.
         """
-        self.episodes.append(
-            EpisodeRecord(
-                episode=episode,
-                total_return=total_return,
-                length=length,
-                success=success,
-                epsilon=epsilon,
-                loss=loss,
-                non_zero_reward_frac=non_zero_reward_frac,
-                terminal_frac=terminal_frac,
-                td_abs_zero=td_abs_zero,
-                td_abs_pos=td_abs_pos,
-                td_abs_neg=td_abs_neg,
-            )
+        record = EpisodeRecord(
+            episode=episode,
+            total_return=total_return,
+            length=length,
+            success=success,
+            epsilon=epsilon,
+            loss=loss,
+            non_zero_reward_frac=non_zero_reward_frac,
+            terminal_frac=terminal_frac,
+            td_abs_zero=td_abs_zero,
+            td_abs_pos=td_abs_pos,
+            td_abs_neg=td_abs_neg,
         )
+        self.episodes.append(record)
+        self._append_episode_to_csv(record)
+
+    def _append_episode_to_csv(self, record: EpisodeRecord) -> None:
+        """Incrementally write one episode record to the CSV file.
+
+        Opens the file in append mode so that old records do not need to be
+        kept in memory. Writes the header on the first call.
+
+        Args:
+            record (EpisodeRecord): The record to persist.
+
+        Returns:
+            None: Record is written to disk.
+        """
+        mode = "w" if not self._csv_initialized else "a"
+        with open(self._csv_path, mode, newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=list(asdict(record).keys()))
+            if not self._csv_initialized:
+                writer.writeheader()
+                self._csv_initialized = True
+            writer.writerow(asdict(record))
 
     def log_eval(self, record: EvalRecord) -> None:
         """Log Evaluation Record.
@@ -167,23 +196,18 @@ class MetricsLogger:
     def save_csv(self, path: str | None = None) -> None:
         """Save Training CSV.
 
-        Persists logged training episodes as a CSV file.
+        No-op: episode records are now written incrementally to disk by
+        ``log_episode`` so there is nothing left to flush here. The ``path``
+        argument is accepted for backward compatibility but ignored when
+        incremental writing is active.
 
         Args:
-            path (str | None): Optional output path. Default path is derived
-                from logger settings.
+            path (str | None): Ignored (kept for backward compatibility).
 
         Returns:
-            None: File is written when episode records exist.
+            None
         """
-        path = path or os.path.join(self.log_dir, f"{self.agent_name}_training.csv")
-        if not self.episodes:
-            return
-        with open(path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(asdict(self.episodes[0]).keys()))
-            writer.writeheader()
-            for ep in self.episodes:
-                writer.writerow(asdict(ep))
+        # Data is already on disk via _append_episode_to_csv; nothing to do.
 
     def save_eval_json(self, path: str | None = None) -> None:
         """Save Evaluation JSON.
@@ -201,7 +225,7 @@ class MetricsLogger:
         with open(path, "w") as f:
             json.dump([asdict(e) for e in self.evals], f, indent=2)
 
-    def get_recent_stats(self, window: int = 100) -> dict:
+    def get_recent_stats(self) -> dict:
         """Compute Recent Aggregate Stats.
 
         Computes moving-window averages over recent episode records.
@@ -212,7 +236,7 @@ class MetricsLogger:
         Returns:
             dict: Aggregated metric dictionary for recent episodes.
         """
-        recent = self.episodes[-window:]
+        recent = list(self.episodes)
         if not recent:
             return {}
         returns = [e.total_return for e in recent]
