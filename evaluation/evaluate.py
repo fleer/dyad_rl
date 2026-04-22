@@ -114,7 +114,7 @@ def collect_eval_trajectory(
         list[dict]: Collected transition records for one episode.
     """
     trajectory: list[dict] = []
-    obs_raw, info = env.reset(seed=42)
+    obs_raw, info = env.reset()
     obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type)
 
     for step in range(max_steps):

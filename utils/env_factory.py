@@ -1,9 +1,8 @@
 import gymnasium as gym
-from gymnasium.wrappers import FlattenObservation
 import numpy as np
+import rlp  # noqa: F401 — registers rlp/Puzzle-v0
 from omegaconf import DictConfig
 
-import rlp  # noqa: F401 — registers rlp/Puzzle-v0
 from utils.obs_processing import (
     FlattenObservationDual,
 )
@@ -24,37 +23,6 @@ class ActionMaskWrapper(gym.Wrapper):
             np.ndarray: Boolean mask indicating valid actions.
         """
         return self.env.unwrapped.action_masks()
-
-
-def make_env(cfg: DictConfig) -> gym.Env:
-    """Create Environment.
-
-    Builds a puzzle environment from config with wrappers appropriate for the
-    selected observation type.
-
-    Args:
-        cfg (DictConfig): Environment and wrapper configuration.
-
-    Returns:
-        gym.Env: Wrapped Gymnasium environment.
-    """
-    env = gym.make(
-        "rlp/Puzzle-v0",
-        puzzle=cfg.env.puzzle,
-        render_mode=cfg.env.render_mode,
-        obs_type=cfg.env.obs_type,
-        window_width=cfg.env.window_width,
-        window_height=cfg.env.window_height,
-        allow_undo=cfg.env.allow_undo,
-        max_state_repeats=cfg.env.max_state_repeats,
-        include_cursor_in_state_info=cfg.env.include_cursor_in_state_info,
-        params=cfg.env.params,
-    )
-    if cfg.env.obs_type == "puzzle_state":
-        env = FlattenObservation(env)
-        # env = NormalizePuzzleStateWrapper(env)
-    env = ActionMaskWrapper(env)
-    return env
 
 
 def make_dual_obs_env(cfg: DictConfig) -> gym.Env:
@@ -83,4 +51,5 @@ def make_dual_obs_env(cfg: DictConfig) -> gym.Env:
     )
     env = FlattenObservationDual(env)
     env = ActionMaskWrapper(env)
+    env.reset(seed=cfg.seed)
     return env

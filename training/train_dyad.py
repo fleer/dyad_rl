@@ -9,13 +9,13 @@ from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
 from agents.dqn_agent import DQNAgent
-from utils.replay_buffer import Transition
-from utils.metrics import MetricsLogger, EvalRecord
 from evaluation.evaluate import (
-    evaluate,
     collect_eval_trajectory,
+    evaluate,
 )
 from training.train_single import _run_episode, prefill_buffer
+from utils.metrics import EvalRecord, MetricsLogger
+from utils.replay_buffer import Transition
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +50,11 @@ def _share_experience(
     actual_returns = np.zeros(len(provider_trajectory), dtype=np.float32)
     running_return = 0.0
     for i in reversed(range(len(provider_trajectory))):
-        running_return = provider_trajectory[i].reward + rater.gamma * running_return
+        running_return = provider_trajectory[
+            i
+        ].reward + rater.gamma * running_return * (
+            1.0 - float(provider_trajectory[i].done)
+        )
         actual_returns[i] = running_return
 
     # ATTENTION: This is the most critical part of the dyad learning algorithm.

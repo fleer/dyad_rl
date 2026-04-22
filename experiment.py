@@ -30,7 +30,7 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 
 from agents.dqn_agent import DQNAgent
-from utils.env_factory import make_env, make_dual_obs_env
+from utils.env_factory import make_dual_obs_env
 from utils.metrics import MetricsLogger
 from training.train_single import train_single
 from training.train_dyad import train_dyad
@@ -190,7 +190,7 @@ def run_eval(cfg: DictConfig) -> None:
         None: Evaluation results are logged.
     """
     device = _resolve_device(cfg.device)
-    env = make_env(cfg)
+    env = make_dual_obs_env(cfg)
     obs_shape = _get_obs_shape(env, cfg.env.obs_type, cfg)
     num_actions = env.action_space.n
 

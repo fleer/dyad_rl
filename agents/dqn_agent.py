@@ -109,9 +109,12 @@ class DQNAgent:
         # Q_target parameters are frozen.
         for p in target_net.parameters():
             p.requires_grad = False
-        # Compile networks with TorchDynamo for potential speedup (optional)
-        self.policy_net = torch.compile(policy_net, fullgraph=True)
-        self.target_net = torch.compile(target_net, fullgraph=True)
+        # Compile networks with TorchDynamo for speedup.
+        # fullgraph=True is intentionally omitted: on ROCm (AMD GPU) it triggers
+        # a whole-graph HIP/hipcc compilation that can consume 10–80+ GB of RAM.
+        # The default mode with graph-break fallbacks is safe and far cheaper.
+        self.policy_net = torch.compile(policy_net)
+        self.target_net = torch.compile(target_net)
 
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -173,14 +176,19 @@ class DQNAgent:
             return int(np.random.randint(self.num_actions))
 
         # Greedy action with masking
-        state_t = torch.as_tensor(
-            state, dtype=torch.float32, device=self.device
-        ).unsqueeze(0)
-        q_values = self.policy_net(state_t)
-        if action_mask is not None:
-            mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
-            q_values[0][~mask_t] = float("-inf")
-        return int(q_values.argmax(dim=1).item())
+        with torch.no_grad():
+            state_t = torch.as_tensor(
+                state, dtype=torch.float32, device=self.device
+            ).unsqueeze(0)
+            q_values = self.policy_net(state_t)
+            if action_mask is not None:
+                mask_t = torch.as_tensor(
+                    action_mask, dtype=torch.bool, device=self.device
+                )
+                # Use masked_fill (non-in-place) to avoid modifying the compiled
+                # model's output buffer, which can cause issues with torch.compile.
+                q_values = q_values.masked_fill(~mask_t, float("-inf"))
+            return int(q_values.argmax(dim=1).item())
 
     @torch.no_grad()
     def _td_target(

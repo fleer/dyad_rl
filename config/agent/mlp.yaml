@@ -7,7 +7,7 @@ net_arch:
 # Core DQN hyperparameters — names match SB3 DQN.__init__ exactly
 learning_rate: 1.0e-4 # SB3 default: 1e-4
 buffer_size: 1000000 # SB3 default: 1_000_000; reduced due to memory constraints
-learning_starts: 1000000 # SB3 default: 100 
+learning_starts: 100 # SB3 default: 100 
 batch_size: 64
 gamma: 0.99
 train_freq: 4 # SB3 default: 4 — optimize every N environment steps

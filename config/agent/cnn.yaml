@@ -16,7 +16,7 @@ fc_hidden: 512
 # Core DQN hyperparameters — names match SB3 DQN.__init__ exactly
 learning_rate: 1.0e-4 # SB3 default: 1e-4
 buffer_size: 1000000 # SB3 default: 1_000_000; reduced for pixel obs memory constraints
-learning_starts: 1000000 # SB3 default: 100 — replaces prefill_buffer
+learning_starts: 100 # SB3 default: 100 — replaces prefill_buffer
 batch_size: 64 # SB3 default: 32
 gamma: 0.99
 train_freq: 4 # SB3 default: 4 — optimize every N environment steps
