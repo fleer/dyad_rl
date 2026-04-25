@@ -39,6 +39,43 @@ class ReplayBuffer:
         self.buffer = deque(maxlen=capacity)
         self.observation_type = observation_type
 
+    def _trim_transition(self, transition: Transition) -> Transition:
+        """Trim Transition Payload.
+
+        Keeps only the observation modality needed by this buffer so replay
+        storage does not retain duplicate state branches.
+
+        Args:
+            transition (Transition): Transition to normalize for buffer
+                storage.
+
+        Returns:
+            Transition: Transition with unused observation branches removed.
+        """
+        if self.observation_type == "rgb":
+            return Transition(
+                action=transition.action,
+                reward=transition.reward,
+                done=transition.done,
+                next_action_mask=transition.next_action_mask,
+                state_discrete=None,
+                next_state_discrete=None,
+                state_rgb=transition.state_rgb,
+                next_state_rgb=transition.next_state_rgb,
+            )
+        if self.observation_type == "puzzle_state":
+            return Transition(
+                action=transition.action,
+                reward=transition.reward,
+                done=transition.done,
+                next_action_mask=transition.next_action_mask,
+                state_discrete=transition.state_discrete,
+                next_state_discrete=transition.next_state_discrete,
+                state_rgb=None,
+                next_state_rgb=None,
+            )
+        return transition
+
     # TODO: Remobe state and next_ste as it handles redundant data and only use
     # state_discrete and state_rgb
     def push(
@@ -81,9 +118,9 @@ class ReplayBuffer:
             state_rgb,
             next_state_rgb,
             # [],
-            # []
+            # [],
         )
-        self.buffer.append(transition)
+        self.buffer.append(self._trim_transition(transition))
 
     def extend(self, transitions: list[Transition]) -> None:
         """Extend Replay Buffer.
@@ -97,9 +134,11 @@ class ReplayBuffer:
             None: Transitions are inserted into storage.
         """
         for t in transitions:
-            self.buffer.append(t)
+            self.buffer.append(self._trim_transition(t))
 
-    def sample(self, batch_size: int, device: torch.device) -> dict[str, torch.Tensor]:
+    def sample(
+        self, batch_size: int, device: torch.device
+    ) -> dict[str, torch.Tensor | None]:
         """Sample Transition Batch.
 
         Samples a random minibatch and converts fields to tensors.
@@ -122,6 +161,10 @@ class ReplayBuffer:
             # For puzzle_state, stack along feature dimension
             raw_state_list = [t.state_discrete for t in batch]
             raw_next_state_list = [t.next_state_discrete for t in batch]
+        else:
+            raise ValueError(
+                f"Unsupported observation_type for sampling: {self.observation_type}"
+            )
 
         states = torch.as_tensor(
             np.array(raw_state_list), dtype=torch.float32, device=device

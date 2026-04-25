@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 def _share_experience(
     rater: DQNAgent,
-    provider_trajectory: list[dict],
+    provider_trajectory: list[Transition],
     rating_threshold: float,
 ) -> list[Transition]:
     """Share Rated Experience.
@@ -32,9 +32,7 @@ def _share_experience(
 
     Args:
         rater (DQNAgent): Agent evaluating the provider trajectory.
-        provider_trajectory (list[dict]): Provider trajectory transitions.
-        rater_obs_key (str): Key for rater-compatible state observations.
-        rater_next_obs_key (str): Key for rater-compatible next observations.
+        provider_trajectory (list[Transition]): Provider trajectory transitions.
         rating_threshold (float): Minimum accepted rating value.
 
     Returns:
@@ -63,23 +61,25 @@ def _share_experience(
     # Rating = actual return - expected return; accept if rating >= threshold
     # This means that the accepted transitions are those where the provider's outcome was better
     # than what the rater expected, according to the rater's own value function.
-    ratings = actual_returns - expected_returns
+    _ratings = actual_returns - expected_returns
     accepted: list[Transition] = []
 
     for i, step in enumerate(provider_trajectory):
-        if ratings[i] > rating_threshold:
-            accepted.append(
-                Transition(
-                    action=step.action,
-                    reward=step.reward,
-                    done=step.done,
-                    next_action_mask=step.next_action_mask,
-                    state_discrete=step.state_discrete,
-                    next_state_discrete=step.next_state_discrete,
-                    state_rgb=step.state_rgb,
-                    next_state_rgb=step.next_state_rgb,
-                )
+        # Rating is computed before buffer insertion so both observation
+        # branches remain available during cross-agent scoring.
+        # if _ratings[i] > rating_threshold:
+        accepted.append(
+            Transition(
+                action=step.action,
+                reward=step.reward,
+                done=step.done,
+                next_action_mask=step.next_action_mask,
+                state_discrete=step.state_discrete,
+                next_state_discrete=step.next_state_discrete,
+                state_rgb=step.state_rgb,
+                next_state_rgb=step.next_state_rgb,
             )
+        )
 
     return accepted
 
@@ -93,7 +93,7 @@ def train_dyad(
     logger_a: MetricsLogger,
     logger_b: MetricsLogger,
     checkpoint_dir: str = "checkpoints",
-) -> tuple[DQNAgent, DQNAgent]:
+) -> float:
     """Train Dyad Agents.
 
     Trains two DQN agents with periodic cross-rating and experience sharing.
@@ -109,7 +109,7 @@ def train_dyad(
         checkpoint_dir (str): Base directory for checkpoints.
 
     Returns:
-        tuple[DQNAgent, DQNAgent]: Trained agents as ``(agent_a, agent_b)``.
+        float: Best evaluation win rate across both agents.
     """
     total_episodes = cfg.training.total_episodes
     max_steps = cfg.training.max_steps
@@ -222,8 +222,8 @@ def train_dyad(
                     ret_a = ret_b = 0.0
                     accepted_for_a: list[Transition] = []
                     accepted_for_b: list[Transition] = []
-                    traj_a: list[dict] = []
-                    traj_b: list[dict] = []
+                    traj_a: list[Transition] = []
+                    traj_b: list[Transition] = []
                     traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
                     # Agent B rates Agent A's trajectory using B's own value function
                     accepted_for_b = _share_experience(
@@ -319,9 +319,7 @@ def train_dyad(
                     agent_b.save(os.path.join(dir_b, f"checkpoint_{episode}.pt"))
 
     # Save final metrics and models
-    logger_a.save_csv()
     logger_a.save_eval_json()
-    logger_b.save_csv()
     logger_b.save_eval_json()
 
     sharing_stats_path = os.path.join(logger_a.log_dir, "sharing_stats.json")

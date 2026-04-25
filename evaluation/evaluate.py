@@ -99,7 +99,7 @@ def collect_eval_trajectory(
     agent: DQNAgent,
     env: gym.Env,
     max_steps: int = 10000,
-) -> list[dict]:
+) -> list[Transition]:
     """Collect Evaluation Trajectory.
 
     Runs one greedy evaluation episode and collects transition dictionaries for
@@ -111,9 +111,9 @@ def collect_eval_trajectory(
         max_steps (int): Maximum steps for the trajectory.
 
     Returns:
-        list[dict]: Collected transition records for one episode.
+        list[Transition]: Collected transition records for one episode.
     """
-    trajectory: list[dict] = []
+    trajectory: list[Transition] = []
     obs_raw, info = env.reset()
     obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type)
 

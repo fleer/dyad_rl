@@ -34,16 +34,6 @@ class EvalRecord:
     std_length: float
 
 
-@dataclass
-class BaselineRecord:
-    name: str
-    avg_return: float
-    win_rate: float
-    avg_length: float
-    n_episodes: int
-    max_steps: int
-
-
 class MetricsLogger:
     """Tracks training and evaluation metrics, writes CSV and JSON outputs."""
 
@@ -161,53 +151,6 @@ class MetricsLogger:
             None: Record is appended to internal storage.
         """
         self.evals.append(record)
-
-    def log_baseline(
-        self,
-        name: str,
-        result: dict,
-        n_episodes: int,
-        max_steps: int,
-    ) -> None:
-        """Log Baseline Metrics.
-
-        Stores baseline evaluation metrics for later persistence.
-
-        Args:
-            name (str): Baseline name.
-            result (dict): Baseline metric dictionary.
-            n_episodes (int): Number of baseline episodes.
-            max_steps (int): Maximum steps per episode during baseline run.
-
-        Returns:
-            None: Baseline record is appended to internal storage.
-        """
-        self.baselines.append(
-            BaselineRecord(
-                name=name,
-                avg_return=result["avg_return"],
-                win_rate=result["win_rate"],
-                avg_length=result["avg_length"],
-                n_episodes=n_episodes,
-                max_steps=max_steps,
-            )
-        )
-
-    def save_csv(self, path: str | None = None) -> None:
-        """Save Training CSV.
-
-        No-op: episode records are now written incrementally to disk by
-        ``log_episode`` so there is nothing left to flush here. The ``path``
-        argument is accepted for backward compatibility but ignored when
-        incremental writing is active.
-
-        Args:
-            path (str | None): Ignored (kept for backward compatibility).
-
-        Returns:
-            None
-        """
-        # Data is already on disk via _append_episode_to_csv; nothing to do.
 
     def save_eval_json(self, path: str | None = None) -> None:
         """Save Evaluation JSON.

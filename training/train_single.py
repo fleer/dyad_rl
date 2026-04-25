@@ -91,7 +91,7 @@ def _run_episode(
     reward_step_penalty: float = 0.0,
     train_freq: int = 4,
     gradient_steps: int = 1,
-) -> tuple[float, int, bool, float, dict[str, float]]:
+) -> tuple[float, int, bool, float]:
     """Run Training Episode.
 
     Executes one environment episode and performs in-loop DQN optimization.
@@ -331,7 +331,6 @@ def train_single(
                     agent.save(os.path.join(checkpoint_dir, f"checkpoint_{episode}.pt"))
 
     agent.save(os.path.join(checkpoint_dir, "final_model.pt"))
-    logger.save_csv()
     logger.save_eval_json()
 
     return best_win_rate
