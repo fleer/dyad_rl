@@ -55,6 +55,7 @@ def evaluate(
 
         total_return = 0.0
         reward = 0.0
+        step = 0
 
         for step in range(max_steps):
             action_mask = env.action_masks()
@@ -63,7 +64,7 @@ def evaluate(
             obs_raw, reward, terminated, truncated, info = env.step(action)
             obs, _, _ = process_obs(obs_raw, agent.obs_type)
 
-            shaped_reward = reward - reward_step_penalty
+            shaped_reward = float(reward) - reward_step_penalty
             total_return += shaped_reward
 
             if terminated or truncated:
@@ -71,7 +72,7 @@ def evaluate(
 
         returns.append(total_return)
         lengths.append(step + 1)
-        successes.append(reward > 0)
+        successes.append(float(reward) > 0)
 
     returns_arr = np.array(returns)
     lengths_arr = np.array(lengths)

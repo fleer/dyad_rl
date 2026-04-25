@@ -113,8 +113,11 @@ class DQNAgent:
         # fullgraph=True is intentionally omitted: on ROCm (AMD GPU) it triggers
         # a whole-graph HIP/hipcc compilation that can consume 10–80+ GB of RAM.
         # The default mode with graph-break fallbacks is safe and far cheaper.
-        self.policy_net = torch.compile(policy_net)
-        self.target_net = torch.compile(target_net)
+        # self.policy_net = torch.compile(policy_net)
+        # self.target_net = torch.compile(target_net)
+        self.policy_net = policy_net
+        self.target_net = target_net
+
 
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -137,6 +140,7 @@ class DQNAgent:
             "terminal_frac": 0.0,
         }
 
+    @torch.no_grad()
     def select_action(
         self,
         state: np.ndarray,
@@ -168,7 +172,7 @@ class DQNAgent:
         if explore:
             self.steps_done += 1
 
-        if explore and np.random.random() < eps:
+        if explore and (np.random.random() < eps):
             # Random action from valid actions
             if action_mask is not None:
                 valid = np.where(action_mask)[0]
@@ -176,19 +180,18 @@ class DQNAgent:
             return int(np.random.randint(self.num_actions))
 
         # Greedy action with masking
-        with torch.no_grad():
-            state_t = torch.as_tensor(
-                state, dtype=torch.float32, device=self.device
-            ).unsqueeze(0)
-            q_values = self.policy_net(state_t)
-            if action_mask is not None:
-                mask_t = torch.as_tensor(
-                    action_mask, dtype=torch.bool, device=self.device
-                )
-                # Use masked_fill (non-in-place) to avoid modifying the compiled
-                # model's output buffer, which can cause issues with torch.compile.
-                q_values = q_values.masked_fill(~mask_t, float("-inf"))
-            return int(q_values.argmax(dim=1).item())
+        state_t = torch.as_tensor(
+            state, dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        q_values = self.policy_net(state_t)
+        if action_mask is not None:
+            mask_t = torch.as_tensor(
+                action_mask, dtype=torch.bool, device=self.device
+            )
+            # Use masked_fill (non-in-place) to avoid modifying the compiled
+            # model's output buffer, which can cause issues with torch.compile.
+            q_values = q_values.masked_fill(~mask_t, float("-inf"))
+        return int(q_values.argmax(dim=1).item())
 
     @torch.no_grad()
     def _td_target(
@@ -311,7 +314,7 @@ class DQNAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
     # --- Dyad support methods ---
-
+    @torch.no_grad()
     def compute_q_values(self, states: np.ndarray) -> torch.Tensor:
         """Compute Q Values.
 
@@ -326,10 +329,10 @@ class DQNAgent:
             torch.Tensor: Tensor of shape ``(batch_size, num_actions)``
             containing Q-values.
         """
-        with torch.no_grad():
-            states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
-            return self.policy_net(states_t)
+        states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
+        return self.policy_net(states_t)
 
+    @torch.no_grad()
     def compute_expected_return(self, transitions: list[Transition]) -> np.ndarray:
         """Compute Expected Return.
 
@@ -350,7 +353,6 @@ class DQNAgent:
         elif self.obs_type == "puzzle_state":
             # For puzzle_state, stack along feature dimension
             states = np.array([t.state_discrete for t in transitions], dtype=np.float32)
-        with torch.no_grad():
             states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
             actions_t = torch.as_tensor(
                 actions, dtype=torch.long, device=self.device

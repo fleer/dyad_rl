@@ -6,8 +6,7 @@ defaults:
 experiment_name: exp_mlp_samegame5x5c3s2
 agent:
   net_arch:
-    - 256
-    - 256
-  buffer_size: 500000 # SB3 default: 1_000_000; reduced due to memory constraints
-  learning_starts: 500000 # SB3 default: 100 
-  exploration_decay: 500000 # Exponential epsilon decay constant in env steps
+    - 1024
+    - 1024
+  buffer_size: 500000
+  exploration_decay: 2000000 # Exponential epsilon decay constant in env steps

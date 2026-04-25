@@ -1,8 +1,8 @@
 puzzle: netslide
 params: 2x3b1
 render_mode: rgb_array
-window_width: 128
-window_height: 128
+window_width: 64
+window_height: 64
 allow_undo: false
 max_state_repeats: 200
 include_cursor_in_state_info: true
