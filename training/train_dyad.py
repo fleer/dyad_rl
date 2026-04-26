@@ -67,19 +67,19 @@ def _share_experience(
     for i, step in enumerate(provider_trajectory):
         # Rating is computed before buffer insertion so both observation
         # branches remain available during cross-agent scoring.
-        # if _ratings[i] > rating_threshold:
-        accepted.append(
-            Transition(
-                action=step.action,
-                reward=step.reward,
-                done=step.done,
-                next_action_mask=step.next_action_mask,
-                state_discrete=step.state_discrete,
-                next_state_discrete=step.next_state_discrete,
-                state_rgb=step.state_rgb,
-                next_state_rgb=step.next_state_rgb,
+        if _ratings[i] > rating_threshold:
+            accepted.append(
+                Transition(
+                    action=step.action,
+                    reward=step.reward,
+                    done=step.done,
+                    next_action_mask=step.next_action_mask,
+                    state_discrete=step.state_discrete,
+                    next_state_discrete=step.next_state_discrete,
+                    state_rgb=step.state_rgb,
+                    next_state_rgb=step.next_state_rgb,
+                )
             )
-        )
 
     return accepted
 
