@@ -353,11 +353,11 @@ class DQNAgent:
         elif self.obs_type == "puzzle_state":
             # For puzzle_state, stack along feature dimension
             states = np.array([t.state_discrete for t in transitions], dtype=np.float32)
-            states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
-            actions_t = torch.as_tensor(
-                actions, dtype=torch.long, device=self.device
-            ).unsqueeze(1)
-            q_values = self.policy_net(states_t).gather(1, actions_t).squeeze(1)
+        states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
+        actions_t = torch.as_tensor(
+            actions, dtype=torch.long, device=self.device
+        ).unsqueeze(1)
+        q_values = self.policy_net(states_t).gather(1, actions_t).squeeze(1)
 
         return q_values.cpu().numpy()
 
