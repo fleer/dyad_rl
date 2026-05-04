@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - /agent@agent_a: mlp # Agent A: MLP on discrete state
+  - /agent@agent_b: mlp # Agent B: MLP on discrete state
+  - override /env: samegame_2x3c3s2
+  - override /training: dyad
+experiment_name: exp_dyad_mlp_accept_all_samegame2x3c3s2
+agent_a:
+  buffer_size: 500000 # SB3 default: 1_000_000; reduced due to memory constraints
+  exploration_decay: 500000 # Exponential epsilon decay constant in env steps
+agent_b:
+  buffer_size: 500000 # SB3 default: 1_000_000; reduced due to memory constraints
+  exploration_decay: 500000 # Exponential epsilon decay constant in env steps
+training:
+  share_all: true
+device: cpu

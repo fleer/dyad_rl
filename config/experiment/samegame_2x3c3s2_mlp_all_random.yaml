@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - override /env: samegame_2x3c3s2
+  - override /agent: mlp
+  - override /training: dqn
+experiment_name: exp_mlp_samegame_2x3c3s2_all_random
+agent:
+  buffer_size: 500000
+  exploration_decay: 0
+  exploration_final_eps: 1
+device: cpu
