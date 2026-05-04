@@ -47,7 +47,7 @@
 #
 # =============================================================================
 
-set -euo pipefail  # Exit on error, unset variable, or pipe failure
+set -euo pipefail # Exit on error, unset variable, or pipe failure
 
 # ── Runtime configuration ────────────────────────────────────────────────────
 #
@@ -68,232 +68,127 @@ PYTHON="${PYTHON:-python}"
 #     EXTRA_ARGS="seed=7 training.total_episodes=500 device=cpu"  — combine
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 
-# SKIP_3X3
-#   Set to "1" to skip the larger 3x3b1 puzzle runs (saves significant time).
-#     SKIP_3X3=1 bash experiment.sh
-SKIP_3X3="${SKIP_3X3:-0}"
-
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 log() {
-    # Print a timestamped section header to stderr so it stays visible even
-    # when stdout is redirected to a log file.
-    echo "" >&2
-    echo "══════════════════════════════════════════════════════" >&2
-    echo "  $(date '+%Y-%m-%d %H:%M:%S')  $*" >&2
-    echo "══════════════════════════════════════════════════════" >&2
-    echo "" >&2
+  # Print a timestamped section header to stderr so it stays visible even
+  # when stdout is redirected to a log file.
+  echo "" >&2
+  echo "══════════════════════════════════════════════════════" >&2
+  echo "  $(date '+%Y-%m-%d %H:%M:%S')  $*" >&2
+  echo "══════════════════════════════════════════════════════" >&2
+  echo "" >&2
 }
 
 run_exp() {
-    # Usage: run_exp <description> <hydra_arg> [<hydra_arg> ...]
-    #
-    # Launches experiment.py with the provided Hydra arguments.
-    # The first positional argument is a human-readable label printed to the
-    # log; all remaining arguments are forwarded verbatim to experiment.py.
-    #
-    # The function appends EXTRA_ARGS at the end so user overrides take
-    # precedence over experiment defaults.
-    local desc="$1"; shift
-    log "Starting: $desc"
-    # shellcheck disable=SC2086
-    "$PYTHON" experiment.py "$@" $EXTRA_ARGS
-    log "Finished: $desc"
+  # Usage: run_exp <description> <hydra_arg> [<hydra_arg> ...]
+  #
+  # Launches experiment.py with the provided Hydra arguments.
+  # The first positional argument is a human-readable label printed to the
+  # log; all remaining arguments are forwarded verbatim to experiment.py.
+  #
+  # The function appends EXTRA_ARGS at the end so user overrides take
+  # precedence over experiment defaults.
+  local desc="$1"
+  shift
+  log "Starting: $desc"
+  # shellcheck disable=SC2086
+  "$PYTHON" experiment.py "$@" $EXTRA_ARGS
+  log "Finished: $desc"
 }
 
 # =============================================================================
 # SECTION 1 — Experiment 1: Baseline MLP (Discrete State)
 # =============================================================================
-#
-# Agent:       DQN with MLP network  [64 → 64 → 64 → num_actions]
-# Observation: Flattened discrete puzzle state (1-D float32 vector, normalised
-#              to [-1, 1])
-# Purpose:     Establishes performance baseline for state-based reasoning.
-#              The MLP has direct access to game semantics (tile positions,
-#              connectivity flags, cursor position) so it tends to learn faster
-#              than the CNN on small puzzles.
-#
-# Key config files:
-#   config/experiment/baseline_mlp.yaml   — sets agent=mlp, obs_type=puzzle_state
-#   config/agent/mlp.yaml                 — network architecture + DQN params
-#   config/training/dqn.yaml              — total_episodes, eval_interval, etc.
-#   config/env/netslide_2x3.yaml          — puzzle="netslide", params="2x3b1"
-#   config/env/netslide_3x3.yaml          — puzzle="netslide", params="3x3b1"
-#
-# HOW TO MODIFY THIS EXPERIMENT:
-#   • Change total training length:
-#       add  training.total_episodes=5000
-#   • Adjust MLP hidden layer sizes:
-#       add  agent.net_arch=[128,128]
-#   • Change learning rate:
-#       add  agent.learning_rate=5e-4
-#   • Disable greedy replay-buffer pre-fill (learning_starts controls this):
-#       add  agent.learning_starts=0
-#   • Change exploration schedule:
-#       add  agent.exploration_decay=50000 agent.exploration_final_eps=0.01
-#   • Use a different random seed:
-#       add  seed=7
-#
-# OUTPUT:
-#   results/exp1_mlp_2x3/exp1_mlp_2x3_training.csv
-#   results/exp1_mlp_2x3/exp1_mlp_2x3_eval.json
-#   checkpoints/exp1_mlp_2x3/best_model.pt
-#   checkpoints/exp1_mlp_2x3/final_model.pt
 
 log "=== EXPERIMENT 1: Baseline MLP ==="
+for i in {1..6}; do
+  run_exp "Exp ${i} — Baseline MLP on Samegame 2x3c3s2" \
+    +experiment=samegame_2x3c3s2_mlp \
+    experiment_name="exp_mlp_samegame2x3c3s2_${i}"
+done
 
-# ── 1a. Netslide 2×3  (small) ────────────────────────────────────────────────
-# The 2×3 variant (2 columns, 3 rows, 1 barrier) is the simplest configuration
-# and typically converges within a few thousand episodes for the MLP agent.
-run_exp "Exp 1 — Baseline MLP on Netslide 2x3b1" \
-    +experiment=baseline_mlp \
-    experiment_name=exp1_mlp_2x3 \
-    env=netslide_2x3
-
-# ── 1b. Netslide 3×3  (medium) ───────────────────────────────────────────────
-# The 3×3 variant (3 columns, 3 rows, 1 barrier) has a significantly larger
-# state space and requires more training episodes to converge.
-# HOW TO SKIP: set SKIP_3X3=1 before running the script.
-if [ "${SKIP_3X3}" = "0" ]; then
-    run_exp "Exp 1 — Baseline MLP on Netslide 3x3b1" \
-        +experiment=baseline_mlp \
-        experiment_name=exp1_mlp_3x3 \
-        env=netslide_3x3
-fi
+# TODO: Run experiment
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — Baseline MLP on Samegame 2x3c3s2" \
+#     +experiment=netslide_2x3_mlp \
+#     experiment_name="exp_mlp_netslide_2x3_${i}"
+# done
+#
+# TODO: Run experiment
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — Baseline MLP on Samegame 5x5c3s2" \
+#     +experiment=samegame_5x5c3s2_mlp \
+#     experiment_name="exp_mlp_samegame5x5c3s2_${i}"
+# done
 
 # =============================================================================
 # SECTION 2 — Experiment 2: Baseline CNN (RGB Pixels)
 # =============================================================================
 #
-# Agent:       DQN with CNN network  (Nature DQN architecture)
-#              Conv2d(3→32, 8×8, stride=4) → ReLU →
-#              Conv2d(32→64, 4×4, stride=2) → ReLU →
-#              Conv2d(64→64, 3×3, stride=1) → ReLU →
-#              Flatten → Linear(→512) → ReLU → Linear(→num_actions)
-# Observation: 128×128×3 RGB pixel array, normalised to [0, 1] (channels-first)
-# Purpose:     Establishes the pixel-based learning baseline. The CNN must
-#              infer all game semantics purely from raw visual appearance,
-#              making it harder but more modality-agnostic than the MLP.
-#
-# Key config files:
-#   config/experiment/baseline_cnn.yaml   — sets agent=cnn, obs_type=rgb
-#   config/agent/cnn.yaml                 — conv architecture + DQN params
-#   config/training/dqn.yaml              — shared training loop parameters
-#
-# HOW TO MODIFY THIS EXPERIMENT:
-#   • Change CNN architecture (convolutional layers):
-#       add  agent.conv_channels=[32,64]  agent.conv_kernels=[8,4]  agent.conv_strides=[4,2]
-#   • Change the fully-connected head width:
-#       add  agent.fc_hidden=256
-#   • Change image resolution (must match window_width/height in env config):
-#       add  env.window_width=64  env.window_height=64
-#   • Use a larger replay buffer (pixels use more memory):
-#       add  agent.buffer_size=50000     (default is 50 000 due to memory)
-#   • Increase target network update frequency:
-#       add  agent.target_update_interval=5000
-#
-# OUTPUT:
-#   results/exp2_cnn_2x3/exp2_cnn_2x3_training.csv
-#   results/exp2_cnn_2x3/exp2_cnn_2x3_eval.json
-#   checkpoints/exp2_cnn_2x3/best_model.pt
-#   checkpoints/exp2_cnn_2x3/final_model.pt
-
 log "=== EXPERIMENT 2: Baseline CNN ==="
-
-# ── 2a. Netslide 2×3  (small) ────────────────────────────────────────────────
-run_exp "Exp 2 — Baseline CNN on Netslide 2x3b1" \
-    +experiment=baseline_cnn \
-    experiment_name=exp2_cnn_2x3 \
-    env=netslide_2x3
-
-# ── 2b. Netslide 3×3  (medium) ───────────────────────────────────────────────
-if [ "${SKIP_3X3}" = "0" ]; then
-    run_exp "Exp 2 — Baseline CNN on Netslide 3x3b1" \
-        +experiment=baseline_cnn \
-        experiment_name=exp2_cnn_3x3 \
-        env=netslide_3x3
-fi
+#
+# TODO: Run experiment
+# ── 2a. Samegame 2×3  (small) ────────────────────────────────────────────────
+for i in {1..6}; do
+  run_exp "Exp ${i} — Baseline CNN on Samegame 2x3c3s2" \
+    +experiment=samegame_2x3c3s2_cnn \
+    experiment_name="exp_cnn_samegame2x3c3s2_${i}"
+done
+#
+# TODO: Run experiment
+# run_exp "Exp — Baseline MLP on Samegame 5x5c3s2" \
+#   +experiment=samegame_5x5c3s2_mlp
+# # ── 2b. Netslide 3×3  (medium) ───────────────────────────────────────────────
+# if [ "${SKIP_3X3}" = "0" ]; then
+#   run_exp "Exp 2 — Baseline CNN on Netslide 3x3b1" \
+#     +experiment=baseline_cnn \
+#     experiment_name=exp2_cnn_3x3 \
+#     env=netslide_3x3
+# fi
 
 # =============================================================================
 # SECTION 3 — Experiment 3: Dyad Learning
 # =============================================================================
-#
-# Agents:      Two simultaneous DQN agents — Agent A (MLP) and Agent B (CNN)
-# Observation: BOTH agents use obs_type="dual" — every transition stores the
-#              discrete puzzle state AND the RGB pixels, enabling cross-modality
-#              experience exchange.
-# Purpose:     Tests whether cross-modality experience sharing between agents
-#              with complementary perceptual biases improves learning for either
-#              or both agents compared to solo training (Exp 1 & 2).
-#
-# THE DYAD PROTOCOL (runs every share_interval episodes):
-#   1. Agent A runs 1 greedy episode  → trajectory_A
-#   2. Agent B runs 1 greedy episode  → trajectory_B
-#   3. Agent A RATES trajectory_B:
-#      - Extracts Agent A-compatible obs (discrete state) from B's trajectory
-#      - Computes Q_A(s_i, a_i) for each step
-#      - Computes actual discounted return G_i backward from rewards
-#      - Accepts transition i if  G_i - Q_A(s_i, a_i) > rating_threshold
-#      - Accepted transitions injected into Agent A's replay buffer
-#   4. Agent B RATES trajectory_A  (symmetric, using RGB obs + Q_B)
-#
-# Key config files:
-#   config/experiment/dyad.yaml     — agent_a (MLP) + agent_b (CNN) params
-#   config/training/dyad.yaml       — total_episodes=100000, share_interval=50,
-#                                     rating_threshold=0.0
-#
-# Key dyad-specific parameters:
-#   training.share_interval      (default 50)
-#     How frequently (in episodes) agents share experiences.
-#     Lower → more frequent sharing, more influence of cross-agent data.
-#     Higher → less frequent, agents develop more independently first.
-#     Try: 10, 25, 50, 100
-#
-#   training.rating_threshold    (default 0.0)
-#     Minimum "surprise advantage" (G_i - Q_rater) for a transition to be
-#     accepted. 0.0 = accept anything that exceeded expectations.
-#     Negative (e.g. -1.0) = accept even slightly disappointing transitions.
-#     Positive (e.g. 5.0)  = only accept strongly surprising transitions.
-#
-#   agent_a.* / agent_b.*
-#     All DQN hyperparameters can be set independently per agent.
-#     Example: agent_a.learning_rate=1e-3  agent_b.learning_rate=5e-5
-#
-# HOW TO MODIFY THIS EXPERIMENT:
-#   • Increase sharing frequency:
-#       add  training.share_interval=10
-#   • Make acceptance criterion stricter:
-#       add  training.rating_threshold=2.0
-#   • Run fewer episodes:
-#       add  training.total_episodes=20000
-#   • Tune only Agent B's learning rate:
-#       add  agent_b.learning_rate=1e-3
-#   • Change puzzle difficulty:
-#       add  env=netslide_3x3
-#
-# OUTPUT:
-#   results/exp3_dyad_2x3/agent_a_training.csv   — Agent A (MLP) per-episode log
-#   results/exp3_dyad_2x3/agent_b_training.csv   — Agent B (CNN) per-episode log
-#   results/exp3_dyad_2x3/agent_a_eval.json
-#   results/exp3_dyad_2x3/agent_b_eval.json
-#   checkpoints/exp3_dyad_2x3/agent_a/best_model.pt
-#   checkpoints/exp3_dyad_2x3/agent_b/best_model.pt
 
-log "=== EXPERIMENT 3: Dyad Learning ==="
+# log "=== EXPERIMENT 3: Dyad Learning ==="
+#
+# # ── 3a. Samegame 2x3c3s2 (small) ────────────────────────────────────────────────
 
-# ── 3a. Netslide 2×3  (small) ────────────────────────────────────────────────
-run_exp "Exp 3 — Dyad Learning on Netslide 2x3b1" \
-    +experiment=dyad \
-    experiment_name=exp3_dyad_2x3 \
-    env=netslide_2x3
+# Accept transitions with rating above 0.0 (default behavior)
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — MLP vs. MLP Dyad Learning on SameGame 2x3c3s2" \
+#     +experiment=samegame_2x3c3s2_mlp_dyad \
+#     experiment_name="exp_dyad_mlp_samegame2x3c3s2_${i}"
+# done
 
-# ── 3b. Netslide 3×3  (medium) ───────────────────────────────────────────────
-if [ "${SKIP_3X3}" = "0" ]; then
-    run_exp "Exp 3 — Dyad Learning on Netslide 3x3b1" \
-        +experiment=dyad \
-        experiment_name=exp3_dyad_3x3 \
-        env=netslide_3x3
-fi
+# Accept all trajectories regardless of rating (ablation to test importance of sharing threshold)
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — MLP vs. MLP Dyad Learning on SameGame 2x3c3s2" \
+#     +experiment=samegame_2x3c3s2_mlp_dyad_accept_all \
+#     experiment_name="exp_dyad_mlp_accept_all_samegame2x3c3s2_${i}"
+# done
+
+# TODO: Run experiment
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — MLP vs. MLP Dyad Learning on SameGame 5x5c3s2" \
+#     +experiment=samegame_5x5c3s2_mlp_dyad \
+#     experiment_name="exp_dyad_mlp_samegame5x5c3s2_${i}"
+# done
+
+# TODO: Run experiment
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — Dyad Learning CNN vs. MLP on SameGame 2x3c3s2" \
+#     +experiment=samegame_2x3c3s2_cnn_mlp_dyad \
+#     experiment_name="exp_dyad_cnn_mlp_samegame2x3c3s2_${i}"
+# done
+#
+# TODO: Run experiment
+# for i in {1..6}; do
+#   run_exp "Exp ${i} — Dyad Learning CNN vs. CNN on SameGame 2x3c3s2" \
+#     +experiment=samegame_2x3c3s2_cnn_cnn_dyad \
+#     experiment_name="exp_dyad_cnn_cnn_samegame2x3c3s2_${i}"
+# done
 
 # =============================================================================
 # Done
@@ -304,4 +199,12 @@ echo ""
 echo "Results are saved under:  results/"
 echo "Checkpoints are saved in: checkpoints/"
 echo ""
-echo "To visualise results, open experiment.ipynb and run Section 6."
+
+echo ""
+echo "Average returns for all runs (see results/ folder):"
+python average_runs.py results
+
+echo "Plotting learning curves for all runs (see results/ folder):"
+python plot_results.py --experiments results/exp_mlp_samegame2x3c3s2_averaged/exp_mlp_samegame2x3c3s2_eval.json results/exp_dyad_mlp_samegame2x3c3s2_averaged/agent_a_eval.json results/exp_dyad_mlp_samegame2x3c3s2_averaged/agent_b_eval.json
+
+python plot_dyad_sharing.py results/exp_dyad_mlp_samegame2x3c3s2_averaged/sharing_stats.json
