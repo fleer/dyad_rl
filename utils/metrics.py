@@ -57,7 +57,6 @@ class MetricsLogger:
         # preventing unbounded RAM growth during long training runs.
         self.episodes: deque[EpisodeRecord] = deque(maxlen=log_interval)
         self.evals: list[EvalRecord] = []
-        self.baselines: list[BaselineRecord] = []
         self._csv_path: str = os.path.join(log_dir, f"{agent_name}_training.csv")
         self._csv_initialized: bool = False
         os.makedirs(log_dir, exist_ok=True)

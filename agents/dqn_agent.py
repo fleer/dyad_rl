@@ -185,9 +185,7 @@ class DQNAgent:
         ).unsqueeze(0)
         q_values = self.policy_net(state_t)
         if action_mask is not None:
-            mask_t = torch.as_tensor(
-                action_mask, dtype=torch.bool, device=self.device
-            )
+            mask_t = torch.as_tensor(action_mask, dtype=torch.bool, device=self.device)
             # Use masked_fill (non-in-place) to avoid modifying the compiled
             # model's output buffer, which can cause issues with torch.compile.
             q_values = q_values.masked_fill(~mask_t, float("-inf"))

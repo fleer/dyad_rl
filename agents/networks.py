@@ -79,6 +79,7 @@ class CNNNetwork(nn.Module):
         for out_ch, k, s in zip(conv_channels, conv_kernels, conv_strides):
             conv_layers.append(nn.Conv2d(in_ch, out_ch, kernel_size=k, stride=s))
             conv_layers.append(nn.ReLU())
+            # conv_layers.append(nn.MaxPool2d(kernel_size=2, stride=2))
             in_ch = out_ch
         conv_layers.append(nn.Flatten())
         self.conv = nn.Sequential(*conv_layers)
