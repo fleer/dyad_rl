@@ -28,6 +28,8 @@ import shutil
 import subprocess
 import sys
 
+import time
+
 import gymnasium as gym
 import numpy as np
 import torch
@@ -36,10 +38,7 @@ from omegaconf import DictConfig, OmegaConf
 
 import rlp  # noqa: F401 — registers rlp/Puzzle-v0
 from agents.dqn_agent import DQNAgent
-from utils.obs_processing import (
-    NormalizePuzzleStateWrapper,
-    process_obs,
-)
+from utils.obs_processing import FlattenObservationDual, process_obs
 
 log = logging.getLogger(__name__)
 
@@ -138,7 +137,7 @@ def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
     if default_cfg_path.exists():
         cfg = OmegaConf.merge(cfg, OmegaConf.load(default_cfg_path))
 
-    env_cfg_path = config_dir / "env" / "netslide_2x3.yaml"
+    env_cfg_path = config_dir / "env" / "samegame_2x3c3s2.yaml"
     if env_cfg_path.exists():
         cfg = OmegaConf.merge(
             cfg, OmegaConf.create({"env": OmegaConf.load(env_cfg_path)})
@@ -159,7 +158,7 @@ def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
     # Ensure visualization-safe settings.
     cfg.experiment_name = experiment_name
     cfg.env.obs_type = inferred_obs_type
-    cfg.env.render_mode = "rgb_array"
+    cfg.env.render_mode = "human"
 
     return cfg
 
@@ -167,8 +166,9 @@ def load_config_from_checkpoint(checkpoint_path: str) -> DictConfig:
 def create_env_for_visualization(cfg: DictConfig) -> gym.Env:
     """Create Visualization Environment.
 
-    Creates a visualization-safe environment using ``rgb_array`` rendering and
-    applies required wrappers.
+    Creates a visualization environment using ``cfg.env.render_mode`` and
+    applies required wrappers. Always uses ``obs_type="dual"`` so that
+    ``process_obs`` receives a dict with both modality branches.
 
     Args:
         cfg (DictConfig): Environment configuration.
@@ -176,13 +176,13 @@ def create_env_for_visualization(cfg: DictConfig) -> gym.Env:
     Returns:
         gym.Env: Wrapped environment for episode visualization.
     """
-    log.info("Creating environment in rgb_array mode (recommended for stability)")
+    log.info(f"Creating environment with render_mode={cfg.env.render_mode!r}")
 
     env = gym.make(
         "rlp/Puzzle-v0",
         puzzle=cfg.env.puzzle,
-        render_mode="rgb_array",  # More stable than "human" with C backend
-        obs_type=cfg.env.obs_type,
+        render_mode=cfg.env.render_mode,
+        obs_type="dual",
         window_width=cfg.env.window_width,
         window_height=cfg.env.window_height,
         allow_undo=cfg.env.allow_undo,
@@ -190,14 +190,8 @@ def create_env_for_visualization(cfg: DictConfig) -> gym.Env:
         include_cursor_in_state_info=cfg.env.include_cursor_in_state_info,
         params=cfg.env.params,
     )
-
-    # Wrap with observation normalization and action masking
-    if cfg.env.obs_type == "puzzle_state":
-        env = FlattenObservation(env)
-        env = NormalizePuzzleStateWrapper(env)
-    elif cfg.env.obs_type == "rgb":
-        env = ActionMaskWrapper(env)
-
+    env.reset(seed=cfg.seed)
+    env = FlattenObservationDual(env)
     return ActionMaskWrapper(env)
 
 
@@ -288,7 +282,6 @@ def load_agent(
 
     log.info("Initializing agent...")
     agent = DQNAgent(
-        obs_type=cfg.env.obs_type,
         obs_shape=obs_shape,
         num_actions=num_actions,
         cfg=cfg,
@@ -349,7 +342,6 @@ def load_agent(
 
             # Recreate agent with correct num_actions
             agent = DQNAgent(
-                obs_type=cfg.env.obs_type,
                 obs_shape=obs_shape,
                 num_actions=num_actions,
                 cfg=cfg,
@@ -374,6 +366,7 @@ def visualize_episode(
     max_steps: int = 1000,
     save_frames: bool = False,
     output_dir: str = "episode_frames",
+    step_delay: float = 2.0,
 ) -> dict:
     """Visualize Single Episode.
 
@@ -387,22 +380,23 @@ def visualize_episode(
         max_steps (int): Maximum steps to run.
         save_frames (bool): Whether to save rendered frames.
         output_dir (str): Directory where frames are saved.
+        step_delay (float): Seconds to pause after each step for human viewing.
 
     Returns:
         dict: Episode statistics including total return, steps, and success.
     """
-    dual_obs = getattr(env.unwrapped, "obs_type", None) == "dual"
-
     if save_frames:
         os.makedirs(output_dir, exist_ok=True)
         log.info(f"Saving frames to {output_dir}/")
 
     obs_raw, info = env.reset()
-    obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
+    obs, _, _ = process_obs(obs_raw, agent.obs_type)
 
     log.info("Starting episode...")
     log.info(f"Agent type: {agent.policy_net.__class__.__name__}")
     log.info(f"Environment: {cfg.env.puzzle} {cfg.env.params}")
+    if step_delay > 0:
+        log.info(f"Step delay: {step_delay}s per step")
 
     total_return = 0.0
     step_count = 0
@@ -415,7 +409,7 @@ def visualize_episode(
 
         # Step environment
         obs_raw, reward, terminated, truncated, info = env.step(action)
-        obs, _, _ = process_obs(obs_raw, agent.obs_type, dual_obs)
+        obs, _, _ = process_obs(obs_raw, agent.obs_type)
 
         total_return += reward
         step_count += 1
@@ -424,6 +418,10 @@ def visualize_episode(
         frame = env.render()
         if frame is not None and save_frames:
             frames.append(frame)
+
+        # Pause so a human can follow the rendered puzzle state
+        if step_delay > 0:
+            time.sleep(step_delay)
 
         # Log progress periodically
         if (step + 1) % 100 == 0:
@@ -613,9 +611,15 @@ def main():
         default=10,
         help="Video framerate in fps (default: 10, only used with --mp4-output)",
     )
+    parser.add_argument(
+        "--step-delay",
+        type=float,
+        default=2.0,
+        help="Seconds to pause after each step for human viewing (default: 2.0; use 0 to disable)",
+    )
     args = parser.parse_args()
 
-    # If mp4_output is specified, automatically enable frame saving
+    # If mp4_output is specified, automatically enable frame saving and disable delay
     if args.mp4_output is not None:
         args.save_frames = True
 
@@ -638,6 +642,10 @@ def main():
 
     # Load config
     cfg = load_config_from_checkpoint(args.checkpoint)
+
+    # Set render mode: rgb_array for MP4 recording, human for interactive viewing
+    cfg.env.render_mode = "rgb_array" if args.mp4_output is not None else "human"
+
     log.info(f"Loaded config:\n{OmegaConf.to_yaml(cfg)}")
 
     # Override params if provided
@@ -666,6 +674,7 @@ def main():
         max_steps=args.max_steps,
         save_frames=args.save_frames,
         output_dir=args.frames_dir,
+        step_delay=args.step_delay,
     )
     log.info(f"Episode stats: {stats}")
 
