@@ -1,8 +1,8 @@
 puzzle: samegame
 params: 2x3c3s2
 render_mode: rgb_array
-window_width: 128
-window_height: 128
+window_width: 84
+window_height: 84
 allow_undo: false
 max_state_repeats: 200
 include_cursor_in_state_info: true
