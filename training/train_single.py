@@ -52,7 +52,7 @@ def prefill_buffer(
                 next_obs_raw, reward, terminated, truncated, next_info = env.step(
                     action
                 )
-                shaped_reward = reward - reward_step_penalty
+                shaped_reward = float(reward) - reward_step_penalty
                 next_obs, next_state_discrete, next_state_rgb = process_obs(
                     next_obs_raw, agent.obs_type
                 )
@@ -110,7 +110,7 @@ def _run_episode(
         episode length, success flag, average loss, and average optimizer
         diagnostics.
     """
-    obs_raw, info = env.reset()
+    obs_raw, _ = env.reset()
     obs, state_discrete, state_rgb = process_obs(obs_raw, agent.obs_type)
 
     total_return = 0.0
@@ -121,8 +121,8 @@ def _run_episode(
         action_mask = env.action_masks()
         action = agent.select_action(obs, action_mask, explore=True)
 
-        next_obs_raw, reward, terminated, truncated, next_info = env.step(action)
-        shaped_reward = reward - reward_step_penalty
+        next_obs_raw, reward, terminated, truncated, _ = env.step(action)
+        shaped_reward = float(reward) - reward_step_penalty
         next_obs, next_state_discrete, next_state_rgb = process_obs(
             next_obs_raw, agent.obs_type
         )
@@ -166,7 +166,7 @@ def _run_episode(
         if episode_done:
             break
 
-    success = reward > 0  # +100 for solved
+    success = float(reward) > 0  # +100 for solved
     avg_loss = total_loss / max(loss_count, 1)
     return total_return, step + 1, success, avg_loss
 
@@ -273,6 +273,7 @@ def train_single(
 
                 progress_bar.set_postfix(
                     eps=f"{agent.current_epsilon:.3f}",
+                    buffer=f"{len(agent.replay_buffer):d}",
                     ret=f"{total_return:.1f}",
                     len=f"{length:d}",
                     loss=f"{avg_loss:.5f}",
