@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /env: netslide_2x3
+  - override /agent: mlp
+  - override /training: dqn
+experiment_name: exp_mlp_netslide_2x3
+agent:
+  buffer_size: 500000 # SB3 default: 1_000_000; reduced due to memory constraints
+  exploration_decay: 500000 # Exponential epsilon decay constant in env steps
+device: cpu

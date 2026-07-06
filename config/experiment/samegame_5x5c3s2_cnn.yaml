@@ -1,13 +1,11 @@
 # @package _global_
 defaults:
   - override /env: samegame_5x5c3s2
-  - override /agent: mlp
+  - override /agent: cnn
   - override /training: dqn
-experiment_name: exp_mlp_samegame5x5c3s2
+experiment_name: exp_cnn_samegame5x5c3s2
 agent:
-  net_arch:
-    - 512
-    - 512
   buffer_size: 500000
+  learning_starts: 500000
   exploration_decay: 1000000 # Exponential epsilon decay constant in env steps
 device: cuda # auto | cpu | cuda
