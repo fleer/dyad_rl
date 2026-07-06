@@ -28,8 +28,8 @@ make
 cd ../../..
 
 # install rlp and its dependencies
-# uv pip install -e ./puzzle_env
-# uv pip install torch torchvision torchaudio
-# # Uncomment for AMD GPUs (ROCm 7.1)
-# # uv pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/rocm7.1
-# uv pip install -r requirements.txt
+uv pip install -e ./puzzle_env
+uv pip install torch torchvision torchaudio
+# Uncomment for AMD GPUs (ROCm 7.1)
+# uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+uv pip install -r requirements.txt
