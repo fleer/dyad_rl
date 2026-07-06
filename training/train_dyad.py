@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 def _share_experience(
     rater: DQNAgent,
     provider_trajectory: list[Transition],
+    share_all: bool,
     rating_threshold: float,
 ) -> list[Transition]:
     """Share Rated Experience.
@@ -33,6 +34,7 @@ def _share_experience(
     Args:
         rater (DQNAgent): Agent evaluating the provider trajectory.
         provider_trajectory (list[Transition]): Provider trajectory transitions.
+        share_all (bool): Whether to share all transitions regardless of rating.
         rating_threshold (float): Minimum accepted rating value.
 
     Returns:
@@ -67,7 +69,7 @@ def _share_experience(
     for i, step in enumerate(provider_trajectory):
         # Rating is computed before buffer insertion so both observation
         # branches remain available during cross-agent scoring.
-        if _ratings[i] > rating_threshold:
+        if _ratings[i] > rating_threshold or share_all:
             accepted.append(
                 Transition(
                     action=step.action,
@@ -119,6 +121,7 @@ def train_dyad(
     log_interval = cfg.training.log_interval
     share_interval = cfg.training.share_interval
     rating_threshold = cfg.training.rating_threshold
+    share_all = cfg.training.share_all
     reward_step_penalty = float(cfg.training.get("reward_step_penalty", 0.0))
     _cfg_a = cfg.get("agent_a", cfg.agent)
     _cfg_b = cfg.get("agent_b", cfg.agent)
@@ -211,6 +214,8 @@ def train_dyad(
                 )
 
                 progress_bar.set_postfix(
+                    buffer_a=f"{len(agent_a.replay_buffer):d}",
+                    buffer_b=f"{len(agent_b.replay_buffer):d}",
                     eps_a=f"{agent_a.current_epsilon:.3f}",
                     eps_b=f"{agent_b.current_epsilon:.3f}",
                 )
@@ -227,14 +232,14 @@ def train_dyad(
                     traj_a = collect_eval_trajectory(agent_a, env_a, max_steps)
                     # Agent B rates Agent A's trajectory using B's own value function
                     accepted_for_b = _share_experience(
-                        agent_b, traj_a, rating_threshold
+                        agent_b, traj_a, share_all, rating_threshold
                     )
                     agent_b.add_to_buffer(accepted_for_b)
                     total_shared_to_b += len(accepted_for_b)
                     traj_b = collect_eval_trajectory(agent_b, env_b, max_steps)
                     # Agent A rates Agent B's trajectory using A's own value function
                     accepted_for_a = _share_experience(
-                        agent_a, traj_b, rating_threshold
+                        agent_a, traj_b, share_all, rating_threshold
                     )
                     # Add accepted transitions to replay buffers
                     agent_a.add_to_buffer(accepted_for_a)
