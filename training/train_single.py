@@ -191,7 +191,7 @@ def train_single(
         checkpoint_dir (str): Directory for model checkpoints.
 
     Returns:
-        float: Best evaluation win rate achieved.
+        float: Best value of the configured optimization metric.
     """
     total_episodes = cfg.training.total_episodes
     max_steps = cfg.training.max_steps
@@ -204,7 +204,13 @@ def train_single(
     gradient_steps = int(cfg.agent.get("gradient_steps", 1))
 
     os.makedirs(checkpoint_dir, exist_ok=True)
-    best_win_rate = -1.0
+    optimize_metric = str(cfg.training.get("optimize_metric", "win_rate"))
+    if optimize_metric not in {"win_rate", "avg_return"}:
+        raise ValueError(
+            f"Unsupported optimize_metric: {optimize_metric}. "
+            "Expected one of {'win_rate', 'avg_return'}."
+        )
+    best_metric = float("-inf")
 
     learning_starts = int(cfg.agent.get("learning_starts", 100))
     if learning_starts > 0:
@@ -230,6 +236,8 @@ def train_single(
         std_length=eval_result["std_length"],
     )
     logger.log_eval(eval_record)
+    initial_metric = float(eval_result[optimize_metric])
+    best_metric = max(best_metric, initial_metric)
     log.info(
         f"  EVAL @ {0}: Win Rate={eval_result['win_rate']:.3f} | "
         f"Avg Return={eval_result['avg_return']:.1f} | "
@@ -319,12 +327,13 @@ def train_single(
                         f"Avg Length={eval_result['avg_length']:.0f} | "
                     )
 
-                    # Save best model
-                    if eval_result["win_rate"] > best_win_rate:
-                        best_win_rate = eval_result["win_rate"]
+                    # Save best model according to configured objective.
+                    current_metric = float(eval_result[optimize_metric])
+                    if current_metric > best_metric:
+                        best_metric = current_metric
                         agent.save(os.path.join(checkpoint_dir, "best_model.pt"))
                         log.info(
-                            f"  New best model saved (win_rate={best_win_rate:.3f})"
+                            f"  New best model saved ({optimize_metric}={best_metric:.3f})"
                         )
 
                 # Periodic checkpoint
@@ -334,4 +343,4 @@ def train_single(
     agent.save(os.path.join(checkpoint_dir, "final_model.pt"))
     logger.save_eval_json()
 
-    return best_win_rate
+    return best_metric

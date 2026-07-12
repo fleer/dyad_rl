@@ -85,13 +85,14 @@ def _get_obs_shape(env: gym.Env, obs_type: str, cfg: DictConfig) -> tuple[int, .
 def run_train_single(cfg: DictConfig) -> float:
     """Run Single-Agent Training.
 
-    Trains one DQN agent and returns the best observed evaluation win rate.
+    Trains one DQN agent and returns the best value of the configured
+    optimization metric.
 
     Args:
         cfg (DictConfig): Experiment configuration.
 
     Returns:
-        float: Best evaluation win rate achieved during training.
+        float: Best value of ``cfg.training.optimize_metric``.
     """
     device = _resolve_device(cfg.device)
     log.info(f"Device: {device}")
