@@ -50,4 +50,4 @@ case "$backend_choice" in
 esac
 
 echo "Installing with extras: $PYTORCH_EXTRA"
-uv sync --extras "$PYTORCH_EXTRA"
+uv sync --extra "$PYTORCH_EXTRA"

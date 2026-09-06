@@ -16,30 +16,22 @@ dependencies = [
   "optuna>=2.10.1",
   "optuna-dashboard>=0.14.0",
   "rlp",
-  "torch>=2.14.0",
-  "torchaudio>=2.11.0",
-  "torchvision>=0.29.0",
   "tqdm",
 ]
 
 [project.optional-dependencies]
-amd = ["torch>=2.14.0", "torchaudio>=2.11.0", "torchvision>=0.29.0"]
-cpu = ["torch>=2.14.0", "torchaudio>=2.11.0", "torchvision>=0.29.0"]
-cuda = ["torch>=2.14.0", "torchaudio>=2.11.0", "torchvision>=0.29.0"]
+amd = ["torch", "torchvision"]
+cpu = ["torch", "torchvision"]
+cuda = ["torch", "torchvision"]
 
 [tool.uv.sources]
 rlp = { path = "puzzle_env" }
-pytorch = [
+torch = [
   { index = "pytorch-amd", extra = "amd" },
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cuda", extra = "cuda" },
 ]
-pytorchaudio = [
-  { index = "pytorch-amd", extra = "amd" },
-  { index = "pytorch-cpu", extra = "cpu" },
-  { index = "pytorch-cuda", extra = "cuda" },
-]
-pytorchvision = [
+torchvision = [
   { index = "pytorch-amd", extra = "amd" },
   { index = "pytorch-cpu", extra = "cpu" },
   { index = "pytorch-cuda", extra = "cuda" },
@@ -47,7 +39,8 @@ pytorchvision = [
 
 [[tool.uv.index]]
 name = "pytorch-amd"
-url = "https://download.pytorch.org/whl/rocm7.2"
+url = "https://download.pytorch.org/whl/rocm7.14"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -61,4 +54,4 @@ explicit = true
 
 
 [tool.uv]
-required-environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]
+conflicts = [[{ "extra" = "amd" }, { "extra" = "cuda" }, { "extra" = "cpu" }]]
