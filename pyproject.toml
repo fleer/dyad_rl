@@ -1,0 +1,64 @@
+[project]
+name = "dyad-rl"
+version = "0.1.0"
+description = "Dyad RL — Collaborative Reinforcement Learning on Logic Puzzles"
+readme = "README.md"
+authors = [{ name = "fleer" }, { name = "abarch" }]
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.19.2",
+  "hydra-core>=1.3.6",
+  "hydra-optuna-sweeper>=1.2.0",
+  "ipython",
+  "jupyter",
+  "matplotlib>=3.11.1",
+  "notebook",
+  "optuna>=2.10.1",
+  "optuna-dashboard>=0.14.0",
+  "rlp",
+  "torch>=2.14.0",
+  "torchaudio>=2.11.0",
+  "torchvision>=0.29.0",
+  "tqdm",
+]
+
+[project.optional-dependencies]
+amd = ["torch>=2.14.0", "torchaudio>=2.11.0", "torchvision>=0.29.0"]
+cpu = ["torch>=2.14.0", "torchaudio>=2.11.0", "torchvision>=0.29.0"]
+cuda = ["torch>=2.14.0", "torchaudio>=2.11.0", "torchvision>=0.29.0"]
+
+[tool.uv.sources]
+rlp = { path = "puzzle_env" }
+pytorch = [
+  { index = "pytorch-amd", extra = "amd" },
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cuda", extra = "cuda" },
+]
+pytorchaudio = [
+  { index = "pytorch-amd", extra = "amd" },
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cuda", extra = "cuda" },
+]
+pytorchvision = [
+  { index = "pytorch-amd", extra = "amd" },
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cuda", extra = "cuda" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-amd"
+url = "https://download.pytorch.org/whl/rocm7.2"
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+
+[tool.uv]
+required-environments = ["sys_platform == 'darwin'", "sys_platform == 'linux'"]

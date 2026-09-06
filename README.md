@@ -42,11 +42,12 @@ dyad_rl/
 ```
 
 The install script will:
-1. Create a `.venv` virtual environment (Python 3.11)
-2. Build the C puzzle libraries via CMake
-3. Install the `rlp` puzzle-env package, PyTorch (ROCm 7.1), and Python dependencies
+1. Verify `uv` is installed
+2. Create a `.venv` virtual environment (Python 3.11)
+3. Build the C puzzle libraries via CMake
+4. Prompt you to choose a PyTorch backend (`cpu`, `amd`/ROCm, or `cuda`), then run `uv sync --extras <choice>` to install the `rlp` puzzle-env package, PyTorch, and all other Python dependencies
 
-> **Note:** PyTorch is installed with AMD ROCm support by default. For NVIDIA CUDA, replace the `--index-url` in `install.sh` with the appropriate PyTorch wheel URL.
+> **Note:** The PyTorch backend defaults to `cpu` if you press Enter without a choice. You can also install non-interactively by running `uv sync --extras cpu|amd|cuda` directly.
 
 ## Experiments
 
