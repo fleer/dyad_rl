@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from omegaconf import DictConfig
+import gymnasium as gym
 
 from agents.networks import MLPNetwork, CNNNetwork
 from utils.replay_buffer import ReplayBuffer, Transition
@@ -26,6 +27,7 @@ class DQNAgent:
         cfg: DictConfig,
         agent_cfg: DictConfig | None = None,
         device: torch.device | None = None,
+        
     ):
         """Initialize DQN Agent.
 
@@ -48,6 +50,7 @@ class DQNAgent:
         self.obs_shape = obs_shape
         self.num_actions = num_actions
         self.device = device or torch.device("cpu")
+        
 
         # Use agent_cfg if provided (for dyad with different configs), else cfg.agent
         a_cfg = agent_cfg if agent_cfg is not None else cfg.agent
@@ -193,29 +196,34 @@ class DQNAgent:
 
     @torch.no_grad()
     def _td_target(
-        self, reward: torch.Tensor, next_value: torch.Tensor, done: torch.Tensor
+        self, 
+        reward: torch.Tensor, 
+        next_states: torch.Tensor, # Renamed to avoid variable name collision
+        done: torch.Tensor,
+        next_action_masks: torch.Tensor | None = None
     ) -> torch.Tensor:
-        """Compute TD Target.
+        """Compute TD Target using a fully masked Double DQN mechanism."""
+        # 1. Get Q-values for next states from the ONLINE policy network
+        next_state_policy_q = self.policy_net(next_states)
+        
+        # 2. MASK the online Q-values so it only picks valid actions
+        if next_action_masks is not None:
+            next_state_policy_q = next_state_policy_q.masked_fill(~next_action_masks, float("-inf"))
+            
+        # 3. Online network decides WHICH action is best
+        best_actions = torch.argmax(next_state_policy_q, dim=1)
+        
+        # 4. TARGET network evaluates the value of that chosen action
+        next_state_target_q = self.target_net(next_states)
+        
+        # Pure PyTorch device-safe gathering
+        batch_indices = torch.arange(self.batch_size, device=self.device)
+        next_values = next_state_target_q[batch_indices, best_actions]
+        
+        # 5. Calculate standard Bellman equation target
+        return (next_values * self.gamma * (~done).float() + reward).float()
 
-        Computes the TD target for a batch of transitions.
-
-        Args:
-            reward (torch.Tensor): Tensor of shape ``(batch_size,)``
-            containing rewards.
-            next_value (torch.Tensor): Tensor of shape ``(batch_size,)``
-            containing bootstrap values for the next states.
-            done (torch.Tensor): Boolean tensor of shape ``(batch_size,)``
-            indicating terminal transitions.
-        Returns:
-            torch.Tensor: TD target values with shape ``(batch_size,)``.
-        """
-        next_state_values = self.policy_net(next_value)
-        best_actions = torch.argmax(next_state_values, dim=1)
-        next_value = self.target_net(next_value)[
-            np.arange(0, self.batch_size), best_actions
-        ]
-        return (next_value * self.gamma * (1 - done.float()) + reward).float()
-
+    
     def _td_estimate(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         """Compute TD Estimate.
 
@@ -261,6 +269,7 @@ class DQNAgent:
         rewards = batch["rewards"].squeeze()
         next_states = batch["next_states"]
         dones = batch["dones"].squeeze()
+        next_action_masks = batch["next_action_masks"] 
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
@@ -270,7 +279,7 @@ class DQNAgent:
         # Compute V(s_{t+1}) for all next states.
         # Expected values of actions for non_final_next_states are computed based
         # on the "older" target_net; selecting their best reward with max(1).values
-        next_state_values = self._td_target(rewards, next_states, dones)
+        next_state_values = self._td_target(rewards, next_states, dones, next_action_masks)
         # Compute Huber loss
         loss = self.loss_fn(state_action_values, next_state_values)
 
