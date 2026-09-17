@@ -6,7 +6,7 @@ Investigating whether **dyad learning** (two agents sharing experiences) improve
 
 > Is learning in a dyad beneficial for the learning process of a reinforcement learning agent?
 
-Two DQN agents — one operating on discrete game state (MLP), the other on RGB pixels (CNN) — periodically share and rate each other's experiences, and the filtered transitions are merged into both replay buffers.
+Two DQN agents (MLP on flattened discrete puzzle state and/or CNN on RGB pixels) periodically share and rate each other's experiences, and the filtered transitions are merged into both replay buffers.
 
 ## Project Structure
 
@@ -14,12 +14,17 @@ Two DQN agents — one operating on discrete game state (MLP), the other on RGB 
 dyad_rl/
 ├── experiment.py          # Main entry point (train / eval / sweep)
 ├── experiment.ipynb       # Jupyter notebook for interactive runs
+├── continue_training.py   # Resume training from a checkpoint
+├── visualize_episode.py   # Render a trained agent solving one episode
+├── plot_results.py        # Compare *_eval.json curves across runs
+├── plot_dyad_sharing.py   # Plot dyad sharing acceptance rates
+├── average_runs.py        # Average metric JSONs across repeated runs
 ├── config/                # Hydra YAML configs
 │   ├── default.yaml
-│   ├── sweep_{mlp,cnn,dyad}.yaml
+│   ├── sweep_mlp.yaml, sweep_cnn.yaml
 │   ├── agent/             # mlp.yaml, cnn.yaml
-│   ├── env/               # netslide_2x3.yaml, netslide_3x3.yaml
-│   ├── experiment/        # baseline_mlp.yaml, baseline_cnn.yaml, dyad.yaml
+│   ├── env/               # netslide_{2x3,3x3}.yaml, samegame_{2x3c3s2,5x5c3s2}.yaml
+│   ├── experiment/        # per-puzzle single-agent & dyad experiment presets
 │   └── training/          # dqn.yaml, dyad.yaml
 ├── agents/                # DQN agent & network definitions (MLP / CNN)
 ├── training/              # Training loops (single agent & dyad)
@@ -27,8 +32,7 @@ dyad_rl/
 ├── utils/                 # Env factory, replay buffer, metrics logger
 ├── puzzle_env/            # C-backed puzzle environment (do not modify)
 ├── checkpoints/           # Saved model weights
-├── results/               # Metrics CSVs & visualizations
-├── logs/                  # Experiment logs
+├── results/               # Metrics JSONs & visualizations
 └── smoke_test.py          # End-to-end pipeline verification
 ```
 
@@ -51,62 +55,90 @@ The install script will:
 
 ## Experiments
 
-All experiments target the **netslide** puzzle at two difficulty levels: `2x3b1` and `3x3b1`.
+Experiment presets live in `config/experiment/`. Each preset selects an `env`, an `agent` (or `agent_a` + `agent_b` for dyads), and a `training` config (`dqn` or `dyad`). Puzzles currently shipped:
 
-### Experiment 1 — Baseline MLP (Discrete State)
+- `netslide` at `2x3b1` and `3x3b1`
+- `samegame` at `2x3c3s2` and `5x5c3s2`
 
-DQN with an MLP policy network operating on the flattened internal game state.
+The default composition (see `config/default.yaml`) is `env=netslide_2x3`, `agent=mlp`, `training=dqn`. Add `+experiment=<preset>` to swap in a full preset.
 
-```bash
-# Train on netslide 2x3
-python experiment.py +experiment=baseline_mlp
+### Single-agent DQN (baseline)
 
-# Train on netslide 3x3
-python experiment.py +experiment=baseline_mlp env=netslide_3x3
-```
-
-### Experiment 2 — Baseline CNN (RGB Pixels)
-
-DQN with a CNN policy network operating on 128×128 RGB pixel observations.
+MLP over the flattened discrete puzzle state:
 
 ```bash
-python experiment.py +experiment=baseline_cnn
+# netslide
+python experiment.py +experiment=netslide_2x3_mlp
 
-python experiment.py +experiment=baseline_cnn env=netslide_3x3
+# samegame
+python experiment.py +experiment=samegame_2x3c3s2_mlp
+python experiment.py +experiment=samegame_5x5c3s2_mlp
 ```
 
-### Experiment 3 — Dyad Learning
-
-Two agents (MLP on discrete state + CNN on RGB) train simultaneously and periodically share rated experiences. After every `share_interval` episodes, each agent runs an evaluation episode; the other agent rates those transitions using its own value function, and filtered experiences are merged into both replay buffers.
+CNN over rendered RGB pixels:
 
 ```bash
-python experiment.py +experiment=dyad
-
-python experiment.py +experiment=dyad env=netslide_3x3
+python experiment.py +experiment=samegame_2x3c3s2_cnn
+python experiment.py +experiment=samegame_5x5c3s2_cnn
 ```
 
-### Hyperparameter Sweeps (Optuna)
+A masked-random control (no learning, ε=1) is available as:
 
-Each experiment has an Optuna sweep config that searches over learning rate, gamma, batch size, epsilon decay, tau, and buffer size (50 trials by default).
+```bash
+python experiment.py +experiment=samegame_2x3c3s2_mlp_all_random
+```
+
+### Dyad learning
+
+Two agents train in parallel and periodically share rated experiences. After every `share_interval` episodes, each agent rolls out an evaluation episode; the other agent rates those transitions via its own value function and passing transitions are merged into both replay buffers. Presets cover the three dyad compositions:
+
+```bash
+# MLP + MLP dyad (samegame)
+python experiment.py +experiment=samegame_2x3c3s2_mlp_dyad
+python experiment.py +experiment=samegame_5x5c3s2_mlp_dyad
+
+# MLP + CNN dyad
+python experiment.py +experiment=samegame_2x3c3s2_cnn_mlp_dyad
+python experiment.py +experiment=netslide_2x3_cnn_mlp_dyad
+
+# CNN + CNN dyad
+python experiment.py +experiment=samegame_2x3c3s2_cnn_cnn_dyad
+
+# Accept-all ablation (no rating filter — training.share_all=true)
+python experiment.py +experiment=samegame_2x3c3s2_mlp_dyad_accept_all
+```
+
+### Overriding parts of a preset
+
+Any field can be overridden from the command line via Hydra:
+
+```bash
+# Swap the env inside an existing preset
+python experiment.py +experiment=netslide_2x3_mlp env=netslide_3x3
+
+# Tune hyperparameters
+python experiment.py +experiment=samegame_2x3c3s2_mlp agent.learning_rate=5e-4 training.total_episodes=30000
+```
+
+### Hyperparameter sweeps (Optuna)
+
+Two Optuna sweep configs are shipped, both targeting `samegame_5x5c3s2` and searching over learning rate, gamma, batch size, buffer size, target-update interval, epsilon schedule, `train_freq`, and `gradient_steps` (80 trials by default):
 
 ```bash
 python experiment.py --multirun --config-name=sweep_mlp
 python experiment.py --multirun --config-name=sweep_cnn
-python experiment.py --multirun --config-name=sweep_dyad
 
-# Override environment for any sweep
-python experiment.py --multirun --config-name=sweep_mlp env=netslide_3x3
+# Point a sweep at a different environment
+python experiment.py --multirun --config-name=sweep_mlp env=samegame_2x3c3s2
 ```
 
 ### Evaluation
 
-Evaluate a trained checkpoint:
+Evaluate a trained checkpoint (loads `checkpoints/<exp_name>/best_model.pt`):
 
 ```bash
-python experiment.py +experiment=baseline_mlp mode=eval experiment_name=<exp_name>
+python experiment.py +experiment=netslide_2x3_mlp mode=eval experiment_name=<exp_name>
 ```
-
-The model is loaded from `checkpoints/<exp_name>/best_model.pt`.
 
 ## Visualization — Interactive Episode Playback
 
@@ -115,12 +147,12 @@ Run a trained agent on a single puzzle instance and watch it solve (or attempt t
 ### Quick Start
 
 ```bash
-# Visualize the best MLP model agent
+# Visualize a trained MLP agent
 source .venv/bin/activate.fish
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt --device cpu
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt --device cpu
 
 # Visualize a CNN agent
-python visualize_episode.py --checkpoint checkpoints/exp2_cnn_2x3/best_model.pt --device cpu
+python visualize_episode.py --checkpoint checkpoints/exp_cnn_samegame2x3c3s2/best_model.pt --device cpu
 ```
 
 ### Features
@@ -138,7 +170,7 @@ python visualize_episode.py --checkpoint checkpoints/exp2_cnn_2x3/best_model.pt 
 #### Basic Visualization (Auto Device)
 
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt
 ```
 
 This will:
@@ -162,7 +194,7 @@ __main__ INFO   Success: True
 #### Force CPU Device (Recommended)
 
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt --device cpu
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt --device cpu
 ```
 
 Use this if you encounter GPU memory issues or crashes.
@@ -171,14 +203,14 @@ Use this if you encounter GPU memory issues or crashes.
 
 ```bash
 # Train on 2x3, test on 3x3 (if the agent generalizes)
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt \
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt \
   --params "3x3b1" --device cpu
 ```
 
 #### Save Episode Frames for Video Creation
 
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt \
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt \
   --save-frames --frames-dir my_episode_frames --device cpu
 ```
 
@@ -196,7 +228,7 @@ ffmpeg -framerate 10 -pattern_type glob -i 'my_episode_frames/*.png' \
 Just specify `--mp4-output` and the script handles the rest:
 
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt \
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt \
   --mp4-output my_episode.mp4 --device cpu
 ```
 
@@ -221,7 +253,7 @@ ffplay my_episode.mp4       # Using ffplay
 Adjust video framerate if needed:
 
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt \
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt \
   --mp4-output my_episode.mp4 --framerate 15 --device cpu
 ```
 
@@ -229,19 +261,19 @@ python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt 
 
 **No output files:**
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt --device cpu
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt --device cpu
 # Output: Console logs only, no files created
 ```
 
 **Frames only (for manual video creation):**
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt --save-frames --device cpu
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt --save-frames --device cpu
 # Output: PNG frames saved to episode_frames/
 ```
 
 **MP4 video (recommended):**
 ```bash
-python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt --mp4-output demo.mp4 --device cpu
+python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt --mp4-output demo.mp4 --device cpu
 # Output: Frames in episode_frames/ + MP4 file demo.mp4
 ```
 
@@ -249,7 +281,7 @@ python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt 
 
 ```bash
 for seed in 42 123 456; do
-  python visualize_episode.py --checkpoint checkpoints/exp1_mlp_2x3/best_model.pt \
+  python visualize_episode.py --checkpoint checkpoints/exp_mlp_netslide_2x3/best_model.pt \
     --seed $seed --device cpu
 done
 ```
@@ -258,7 +290,7 @@ done
 
 ```
 --checkpoint CHECKPOINT       (required) Path to checkpoint file
-                              Example: checkpoints/exp1_mlp_2x3/best_model.pt
+                              Example: checkpoints/exp_mlp_netslide_2x3/best_model.pt
 
 --params PARAMS              (optional) Override puzzle parameters
                               Example: 3x3b1
@@ -312,33 +344,50 @@ A successful episode run produces:
 
 ## Configuration
 
-Managed via [Hydra](https://hydra.cc/). Key parameters:
+Managed via [Hydra](https://hydra.cc/). The default composition (`config/default.yaml`) is `env=netslide_2x3`, `agent=mlp`, `training=dqn`. Key parameters:
 
 | Group | Parameter | Default | Description |
 |-------|-----------|---------|-------------|
-| `env` | `puzzle` | `netslide` | Puzzle name |
+| `env` | `puzzle` | `netslide` | Puzzle name (`netslide`, `samegame`, …) |
 | `env` | `params` | `2x3b1` | Puzzle generation parameters |
-| `env` | `obs_type` | `puzzle_state` | `puzzle_state` or `rgb` |
-| `training` | `total_episodes` | `10000` | Training episodes |
-| `training` | `max_steps` | `10000` | Max steps per episode |
+| `env` | `render_mode` | `rgb_array` | Renderer used for RGB observations |
+| `env` | `window_width` / `window_height` | `64` / `64` | RGB render resolution (env-dependent) |
+| `env` | `max_state_repeats` | `200` | Episode truncated after this many repeats |
+| `agent` | `type` | `mlp` | `mlp` or `cnn` |
+| `agent` | `obs_type` | `puzzle_state` | `puzzle_state` (MLP) or `rgb` (CNN) |
+| `agent` | `net_arch` | `[128, 128]` | MLP hidden sizes |
+| `agent` | `conv_channels` / `conv_kernels` / `conv_strides` / `fc_hidden` | `[32,64,64]` / `[8,4,3]` / `[4,2,1]` / `512` | CNN backbone |
+| `agent` | `learning_rate` | `1e-4` | AdamW learning rate |
+| `agent` | `gamma` | `0.99` | Discount factor |
+| `agent` | `batch_size` | `64` | Replay batch size |
+| `agent` | `buffer_size` | `1_000_000` | Replay capacity (presets often lower this to `500_000`) |
+| `agent` | `learning_starts` | `100` | Env steps before optimization begins |
+| `agent` | `train_freq` | `4` | Optimize every N environment steps |
+| `agent` | `gradient_steps` | `1` | Gradient updates per train call |
+| `agent` | `target_update_interval` | `10000` | Hard-copy target network every N steps |
+| `agent` | `exploration_initial_eps` / `exploration_final_eps` | `1.0` / `0.05` | Epsilon schedule endpoints |
+| `agent` | `exploration_decay` | `1_000_000` | Exponential ε decay constant (env steps) |
+| `agent` | `max_grad_norm` | `10` | Gradient-norm clipping threshold |
+| `training` | `total_episodes` | `60000` | Training episodes |
+| `training` | `max_steps` | `1000` | Max steps per episode |
 | `training` | `eval_interval` | `1000` | Episodes between evaluations |
 | `training` | `eval_episodes` | `100` | Episodes per evaluation |
-| `training` | `lr` | `1e-4` | Learning rate (AdamW) |
-| `training` | `gamma` | `0.99` | Discount factor |
-| `training` | `batch_size` | `32` / `128` | Replay batch size |
-| `training` | `eps_start` / `eps_end` / `eps_decay` | `0.9` / `0.05` / `100000` | Epsilon-greedy schedule |
-| `training` | `tau` | `0.005` | Target network soft-update rate |
-| `training` | `share_interval` | `50` | Dyad experience sharing interval |
+| `training` | `checkpoint_interval` | `1000` | Episodes between checkpoint saves |
+| `training` | `log_interval` | `100` | Episodes between metric log flushes |
+| `training` | `dyad` | `false` | Enables dyad training loop when true |
+| `training` | `share_interval` | `1` | Episodes between dyad sharing rounds (dyad only) |
+| `training` | `rating_threshold` | `0.0` | Minimum rating for a shared transition (dyad only) |
+| `training` | `share_all` | `false` | Skip the rating filter and share every transition (dyad only) |
 
 Override any parameter from the command line:
 
 ```bash
-python experiment.py +experiment=baseline_mlp training.lr=5e-4 training.total_episodes=50000
+python experiment.py +experiment=netslide_2x3_mlp agent.learning_rate=5e-4 training.total_episodes=30000
 ```
 
 ## Metrics
 
-Tracked during training and saved to `results/<experiment_name>/`:
+Tracked during training and saved to `results/<experiment_name>/` as JSON files:
 
 - Average return per episode
 - Success rate (puzzles solved / total)
@@ -437,17 +486,17 @@ This is useful before plotting when you want one aggregated `*_eval.json` file o
 
 ```bash
 # Resume from the latest checkpoint in a directory
-python continue_training.py checkpoints/exp1_mlp_2x3 --n-episodes 5000
+python continue_training.py checkpoints/exp_mlp_netslide_2x3 --n-episodes 5000
 
 # Resume from a specific checkpoint file
-python continue_training.py checkpoints/exp1_mlp_2x3/checkpoint_20000.pt --n-episodes 5000
+python continue_training.py checkpoints/exp_mlp_netslide_2x3/checkpoint_20000.pt --n-episodes 5000
 
 # Specify output name and device
-python continue_training.py checkpoints/exp1_mlp_2x3 --n-episodes 5000 \
-    --experiment-name exp1_mlp_2x3_ft --device cpu
+python continue_training.py checkpoints/exp_mlp_netslide_2x3 --n-episodes 5000 \
+    --experiment-name exp_mlp_netslide_2x3_ft --device cpu
 
 # Override any config key
-python continue_training.py checkpoints/exp1_mlp_2x3 --n-episodes 5000 \
+python continue_training.py checkpoints/exp_mlp_netslide_2x3 --n-episodes 5000 \
     agent.learning_rate=5e-5 training.eval_interval=500
 ```
 
@@ -469,8 +518,8 @@ Results and new checkpoints are written to separate directories to preserve the 
 
 | Original | Resumed |
 |----------|---------|
-| `results/exp1_mlp_2x3/` | `results/exp1_mlp_2x3_resumed/` |
-| `checkpoints/exp1_mlp_2x3/` | `checkpoints/exp1_mlp_2x3_resumed/` |
+| `results/exp_mlp_netslide_2x3/` | `results/exp_mlp_netslide_2x3_resumed/` |
+| `checkpoints/exp_mlp_netslide_2x3/` | `checkpoints/exp_mlp_netslide_2x3_resumed/` |
 
 Use `--experiment-name` to choose a custom output name.
 
