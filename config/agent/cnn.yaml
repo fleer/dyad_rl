@@ -14,14 +14,18 @@ conv_strides:
   - 1
 fc_hidden: 512
 # Core DQN hyperparameters — names match SB3 DQN.__init__ exactly
-learning_rate: 1.0e-4 # SB3 default: 1e-4
-buffer_size: 1000000 # SB3 default: 1_000_000; reduced for pixel obs memory constraints
+learning_rate: 1.0e-5 # SB3 default: 1e-4
+buffer_size: 500000 # SB3 default: 1_000_000; reduced for pixel obs memory constraints
 learning_starts: 100 # SB3 default: 100 — replaces prefill_buffer
 batch_size: 64 # SB3 default: 32
 gamma: 0.99
 train_freq: 4 # SB3 default: 4 — optimize every N environment steps
 gradient_steps: 1 # SB3 default: 1 — gradient updates per train call
 target_update_interval: 10000 # SB3 default: 10000 — copy target net every N steps
+target_tracking_type: "standard"
+target_update_method: "polyak"
+polyak_tau: 0.005
+beta: 0.5
 exploration_decay: 1000000 # Exponential epsilon decay constant in env steps
 exploration_initial_eps: 1.0 # SB3 default: 1.0
 exploration_final_eps: 0.05 # SB3 default: 0.05

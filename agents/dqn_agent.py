@@ -72,6 +72,41 @@ class DQNAgent:
         self._n_calls = 0
         self.obs_type = a_cfg.obs_type
 
+        # Target tracking:
+        #   - "standard": ordinary Double-DQN training
+        #   - "sgt2": symmetric gradient target tracking (both networks train)
+        #
+        # Target update method:
+        #   - "hard": copy policy -> target every target_update_interval calls
+        #   - "polyak": soft update target <- (1-tau)*target + tau*policy
+        self.target_tracking_type = str(a_cfg.get("target_tracking_type", "standard")).lower()
+        if self.target_tracking_type not in {"standard", "sgt2"}:
+            raise ValueError(
+                "target_tracking_type must be 'standard' or 'sgt2', "
+                f"got {self.target_tracking_type!r}"
+            )
+
+        self.target_update_method = str(
+            a_cfg.get("target_update_method", "hard")
+        ).lower()
+        if self.target_update_method not in {"hard", "polyak"}:
+            raise ValueError(
+                "target_update_method must be 'hard' or 'polyak', "
+                f"got {self.target_update_method!r}"
+            )
+
+        # Accept either `polyak_tau` or the shorter `tau` config name.
+        self.polyak_tau = float(a_cfg.get("polyak_tau", a_cfg.get("tau", 0.005)))
+        if not 0.0 < self.polyak_tau <= 1.0:
+            raise ValueError(
+                f"polyak_tau/tau must be in (0, 1], got {self.polyak_tau}"
+            )
+
+        # SGT2 coupling strength.
+        self.beta = float(a_cfg.get("beta", 1.0))
+        if self.beta < 0.0:
+            raise ValueError(f"beta must be >= 0, got {self.beta}")
+
         # Build networks
         if a_cfg.type == "mlp":
             input_dim = int(np.prod(obs_shape))
@@ -109,9 +144,18 @@ class DQNAgent:
         else:
             raise ValueError(f"Unknown agent type: {a_cfg.type}")
 
-        # Q_target parameters are frozen.
-        for p in target_net.parameters():
-            p.requires_grad = False
+        # SGT2 optimizes both Q networks. Standard DQN keeps the target frozen.
+        if self.target_tracking_type == "sgt2":
+            for p in policy_net.parameters():
+                p.requires_grad = True
+            for p in target_net.parameters():
+                p.requires_grad = True
+        else:
+            for p in policy_net.parameters():
+                p.requires_grad = True
+            for p in target_net.parameters():
+                p.requires_grad = False
+
         # Compile networks with TorchDynamo for speedup.
         # fullgraph=True is intentionally omitted: on ROCm (AMD GPU) it triggers
         # a whole-graph HIP/hipcc compilation that can consume 10–80+ GB of RAM.
@@ -124,14 +168,18 @@ class DQNAgent:
 
         # Initialize target with policy weights
         self.target_net.load_state_dict(self.policy_net.state_dict())
-        # Q_target parameters are frozen.
-        for p in self.target_net.parameters():
-            p.requires_grad = False
-
-        # TODO Check if correct network parameters are being optimized
-        self.optimizer = optim.AdamW(
-            self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True
-        )
+        # SGT2 uses one optimizer for both networks because its symmetric
+        # objective contains trainable policy and target Q-values.
+        if self.target_tracking_type == "sgt2":
+            self.optimizer = optim.AdamW(
+                list(self.policy_net.parameters()) + list(self.target_net.parameters()),
+                lr=self.learning_rate,
+                amsgrad=True,
+            )
+        else:
+            self.optimizer = optim.AdamW(
+                self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True
+            )
         self.loss_fn = nn.SmoothL1Loss()
 
         self.replay_buffer = ReplayBuffer(self.buffer_size, a_cfg.obs_type)
@@ -175,10 +223,20 @@ class DQNAgent:
         if explore:
             self.steps_done += 1
 
+        if action_mask is not None:
+            action_mask = np.asarray(action_mask, dtype=bool)
+            if action_mask.shape != (self.num_actions,):
+                raise ValueError(
+                    f"action_mask must have shape ({self.num_actions},), "
+                    f"got {action_mask.shape}"
+                )
+            if not np.any(action_mask):
+                raise ValueError("action_mask contains no valid actions.")
+
         if explore and (np.random.random() < eps):
             # Random action from valid actions
             if action_mask is not None:
-                valid = np.where(action_mask)[0]
+                valid = np.flatnonzero(action_mask)
                 return int(np.random.choice(valid))
             return int(np.random.randint(self.num_actions))
 
@@ -271,24 +329,78 @@ class DQNAgent:
         dones = batch["dones"].squeeze()
         next_action_masks = batch["next_action_masks"] 
 
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-        # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
-        state_action_values = self._td_estimate(states, actions)
+        # Current-state action values from both networks.
+        batch_indices = torch.arange(self.batch_size, device=self.device)
+        q_policy_current = self.policy_net(states)[batch_indices, actions].float()
+        q_target_current = self.target_net(states)[batch_indices, actions].float()
 
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1).values
-        next_state_values = self._td_target(rewards, next_states, dones, next_action_masks)
-        # Compute Huber loss
-        loss = self.loss_fn(state_action_values, next_state_values)
+        if self.target_tracking_type == "sgt2":
+            # SGT2: each network has its own Bellman target, while the two
+            # Q-functions are coupled symmetrically by beta.
+            #
+            # The Bellman targets are detached: gradients are taken only
+            # through the current-state Q estimates.
+            with torch.no_grad():
+                next_policy_q = self.policy_net(next_states)
+                next_target_q = self.target_net(next_states)
+
+                if next_action_masks is not None:
+                    next_policy_q = next_policy_q.masked_fill(
+                        ~next_action_masks, float("-inf")
+                    )
+                    next_target_q = next_target_q.masked_fill(
+                        ~next_action_masks, float("-inf")
+                    )
+
+                next_max_policy = next_policy_q.max(dim=1).values
+                next_max_target = next_target_q.max(dim=1).values
+
+                y_policy = (
+                    rewards
+                    + self.gamma * next_max_target * (~dones).float()
+                ).float()
+                y_target = (
+                    rewards
+                    + self.gamma * next_max_policy * (~dones).float()
+                ).float()
+
+            # Symmetric Gradient Target Tracking (SGT2).
+            loss_policy = 0.5 * torch.mean(
+                (y_policy - q_policy_current) ** 2
+                + self.beta * (q_target_current - q_policy_current) ** 2
+            )
+            loss_target = 0.5 * torch.mean(
+                (y_target - q_target_current) ** 2
+                + self.beta * (q_policy_current - q_target_current) ** 2
+            )
+            loss = loss_policy + loss_target
+
+        else:
+            # Standard Double DQN: online policy selects the action and the
+            # frozen target network evaluates it.
+            next_state_values = self._td_target(
+                rewards, next_states, dones, next_action_masks
+            )
+            loss = self.loss_fn(q_policy_current, next_state_values)
 
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        # Clip gradient norm (mirrors SB3: clip_grad_norm_ with max_grad_norm=10)
-        torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), self.max_grad_norm)
+        # Clip all trainable network gradients.
+        torch.nn.utils.clip_grad_norm_(
+            self.policy_net.parameters(), self.max_grad_norm
+        )
+        if self.target_tracking_type == "sgt2":
+            torch.nn.utils.clip_grad_norm_(
+                self.target_net.parameters(), self.max_grad_norm
+            )
+
         self.optimizer.step()
+
+        # Optional soft target tracking. This is deliberately performed after
+        # the gradient step and without building an autograd graph.
+        if self.target_update_method == "polyak":
+            self._polyak_update()
 
         self.last_optimize_stats = {
             "loss": float(loss.item()),
@@ -298,26 +410,36 @@ class DQNAgent:
 
         return loss.item()
 
-    def update_target_net(self) -> None:
-        """Update Target Parameters.
+    @torch.no_grad()
+    def _polyak_update(self) -> None:
+        """Soft-update target parameters using Polyak averaging.
 
-        Performs in-place Polyak averaging for target parameters using
-        ``target = (1 - tau) * target + tau * params``.
-
-        Args:
-            params (Iterator[torch.nn.Parameter]): Source parameters, usually from
-                the policy network.
-            target_params (Iterator[torch.nn.Parameter]): Target parameters to be
-                updated.
-            tau (float): Interpolation factor in ``[0, 1]``. ``1.0`` performs a
-                hard copy.
-
-        Returns:
-            None: This function updates parameters in place.
+        target <- (1 - tau) * target + tau * policy
         """
+        tau = self.polyak_tau
+        for target_param, policy_param in zip(
+            self.target_net.parameters(), self.policy_net.parameters()
+        ):
+            target_param.mul_(1.0 - tau)
+            target_param.add_(policy_param, alpha=tau)
+
+    @torch.no_grad()
+    def update_target_net(self) -> None:
+        """Update the target network according to ``target_update_method``.
+
+        ``hard`` copies the policy network every ``target_update_interval``
+        calls. ``polyak`` performs the soft update after each optimization
+        step; this method is retained for compatibility with training loops
+        that explicitly call ``update_target_net()``.
+        """
+        if self.target_update_method == "polyak":
+            self._polyak_update()
+            return
+
         self._n_calls += 1
         if self._n_calls % self.target_update_interval != 0:
             return
+
         self.target_net.load_state_dict(self.policy_net.state_dict())
 
     # --- Dyad support methods ---
@@ -360,6 +482,9 @@ class DQNAgent:
         elif self.obs_type == "puzzle_state":
             # For puzzle_state, stack along feature dimension
             states = np.array([t.state_discrete for t in transitions], dtype=np.float32)
+        else:
+            raise ValueError(f"Unsupported observation type: {self.obs_type!r}")
+
         states_t = torch.as_tensor(states, dtype=torch.float32, device=self.device)
         actions_t = torch.as_tensor(
             actions, dtype=torch.long, device=self.device
@@ -395,13 +520,19 @@ class DQNAgent:
         Returns:
             None: Checkpoint is written to disk.
         """
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         torch.save(
             {
                 "policy_net": self.policy_net.state_dict(),
                 "target_net": self.target_net.state_dict(),
                 "optimizer": self.optimizer.state_dict(),
                 "steps_done": self.steps_done,
+                "target_tracking_type": self.target_tracking_type,
+                "target_update_method": self.target_update_method,
+                "polyak_tau": self.polyak_tau,
+                "beta": self.beta,
             },
             path,
         )
@@ -422,4 +553,26 @@ class DQNAgent:
         self.policy_net.load_state_dict(checkpoint["policy_net"])
         self.target_net.load_state_dict(checkpoint["target_net"])
         self.optimizer.load_state_dict(checkpoint["optimizer"])
-        self.steps_done = checkpoint["steps_done"]
+        self.steps_done = int(checkpoint.get("steps_done", 0))
+
+        saved_tracking_type = checkpoint.get("target_tracking_type")
+        if (
+            saved_tracking_type is not None
+            and str(saved_tracking_type).lower() != self.target_tracking_type
+        ):
+            raise ValueError(
+                "Checkpoint uses target_tracking_type="
+                f"{saved_tracking_type!r}, but the current agent uses "
+                f"{self.target_tracking_type!r}."
+            )
+
+        saved_update_method = checkpoint.get("target_update_method")
+        if (
+            saved_update_method is not None
+            and str(saved_update_method).lower() != self.target_update_method
+        ):
+            raise ValueError(
+                "Checkpoint uses target_update_method="
+                f"{saved_update_method!r}, but the current agent uses "
+                f"{self.target_update_method!r}."
+            )
